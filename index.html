@@ -170,7 +170,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v10</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v11</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -255,7 +255,8 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
       <div class="bar">
         <select id="addSel" aria-label="Section to add"></select>
         <button class="btn sm" id="addEnt">Add section</button>
-        <button class="btn sm" id="addClick">Add click-only bars</button>
+        <button class="btn sm" id="addIntro">Click bars at start</button>
+        <button class="btn sm" id="addClick">Click bars at end</button>
         <span class="grow"></span>
         <button class="btn sm" id="resetArr">Reset to tempo map</button>
       </div>
@@ -267,7 +268,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
       <h2>Click &amp; mix</h2>
       <div class="mix">
         <label><span class="lbl">Count-in</span>
-          <select id="setCount"><option value="0">None</option><option value="1">1 bar</option><option value="2">2 bars</option><option value="4">4 bars</option></select></label>
+          <span style="display:flex;align-items:center;gap:6px"><input type="number" id="setCount" min="0" max="16" step="1" style="width:4em"> <small>bars, at the first section's tempo</small></span></label>
         <label><span class="lbl">Sound</span>
           <select id="setSound"><option value="beep">Beep</option><option value="wood">Woodblock</option><option value="low">Low click</option></select></label>
         <label><span class="lbl">Subdivision</span>
@@ -479,6 +480,7 @@ function build(v){
   const ch = []; let t = 0;
   const push = c => { c.t = t; if (c.dur > 1e-6){ ch.push(c); t += c.dur; } };
   const secs = S.sections;
+  let pre = 0, eA = null;   // pickup audio before bar 1, and the running-order entry that plays bar 1
   if (v === "map"){
     if (!secs.length){ if (track) push({kind:"tail", dur:track.dur, src:0, click:false}); }
     else {
@@ -496,15 +498,20 @@ function build(v){
     }
   } else {
     const ents = S.arr.filter(e => e.kind === "click" || secById(e.sec));
+    // pickup audio (before bar 1) plays over the end of the count-in and any intro click bars
     if (ents.length){
       const e0 = ents[0]; const i0 = e0.kind === "sec" ? secById(e0.sec) : e0;
-      const P = (e0.kind === "sec" && secs[0] && e0.sec === secs[0].id && !e0.skipStart) ? Math.max(0, secs[0].start) : 0;
+      const ai = ents.findIndex(e => e.kind === "sec"); eA = ai >= 0 ? ents[ai] : null;
+      pre = (eA && secs[0] && eA.sec === secs[0].id && !eA.skipStart) ? Math.max(0, secs[0].start) : 0;
+      const P = pre;
+      const before = ents.slice(0, Math.max(0, ai)).reduce((a, e) => a + timeMap(e, e.bars).dur, 0);
       const C = S.set.countIn * barDur(i0);
-      const L = Math.max(P, C);
+      const L = Math.max(P - before, C);
       const ci = steady(i0);
-      if (L > 0) push({kind:"lead", dur:L, src: P > 0 ? secs[0].start - L : null, ...ci, tm: C > 0 ? timeMap(ci, S.set.countIn) : null, barOff:0, bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
+      if (L > 0) push({kind:"lead", dur:L, src:null, ...ci, tm: C > 0 ? timeMap(ci, S.set.countIn) : null, barOff:0, bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
     }
-    let bar = 1; let lastEnt = null;
+    const introBars = (() => { let n = 0; for (const e of ents){ if (e.kind === "sec") break; n += e.bars; } return n; })();
+    let bar = 1 - introBars; let lastEnt = null;
     ents.forEach((e, k) => {
       const ei = S.arr.indexOf(e);
       if (e.kind === "sec"){
@@ -530,6 +537,10 @@ function build(v){
     const last = secs[secs.length-1];
     if (track && lastEnt && lastEnt.kind === "sec" && last && lastEnt.sec === last.id && !lastEnt.skipEnd && track.dur > last.end)
       push({kind:"tail", dur:track.dur - last.end, src:last.end, click:false, name:"Tail"});
+  }
+  if (v !== "map" && pre > 0){
+    const A = ch.find(c => c.kind === "sec" && c.ent === S.arr.indexOf(eA) && c.pass === 0);
+    if (A) for (const c of ch){ if (c === A) break; if (c.kind === "lead" || c.kind === "click"){ const s0 = secs[0].start - (A.t - c.t); if (s0 + c.dur > 0) c.src = s0; } }
   }
   for (let i = 0; i < ch.length; i++){
     const a = ch[i-1], c = ch[i];
@@ -1211,6 +1222,12 @@ $("#ents").addEventListener("change", e => {
   });
 });
 $("#addEnt").onclick = () => { const id = $("#addSel").value; if (!id) return; mut(() => S.arr.push({id:uid(), kind:"sec", sec:id, repeat:1, open:false, skipStart:0, skipEnd:0})); };
+$("#addIntro").onclick = () => {
+  const first = S.arr.find(e => e.kind === "click" || secById(e.sec));
+  const src = first ? (first.kind === "sec" ? secById(first.sec) : first) : null;
+  mut(() => S.arr.unshift(normMeter({id:uid(), kind:"click", label:"In", name:"Intro click", bars:2, ...(src ? steady(src) : {bpm:120, num:4, den:4, unit:"4"}), groups: src ? src.groups.slice() : undefined})));
+  toast("Added 2 bars of intro click before the track. Change the bars, tempo or time signature on it in the running order.");
+};
 $("#addClick").onclick = () => {
   const r = tl(); const c = chunkAt(playhead);
   mut(() => S.arr.push(normMeter({id:uid(), kind:"click", label:"+", name:"Extra bars", bars:2, ...(c && c.bpm ? steady(c) : {bpm:120, num:4, den:4, unit:"4"})})));
@@ -1226,7 +1243,7 @@ function renderSettings(){
   $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
-$("#setCount").onchange = e => mut(() => S.set.countIn = +e.target.value);
+$("#setCount").onchange = e => mut(() => S.set.countIn = clamp(Math.round(+e.target.value || 0), 0, 16));
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
 $("#setSound").onchange = e => mut(() => S.set.sound = e.target.value);
 $("#setSub").onchange = e => mut(() => S.set.sub = +e.target.value);
