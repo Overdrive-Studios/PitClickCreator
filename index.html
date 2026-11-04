@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Cache-Control" content="no-cache">
 <title>Pit Click</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -42,6 +43,7 @@ small,.muted{color:var(--muted)}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
 .brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
 .brand h1{font:800 28px/1 var(--f-mark);margin:0;letter-spacing:-.01em}
+.ver{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
 .brand .trk{color:var(--muted);font-size:13px;max-width:36ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:6px 11px;cursor:pointer;white-space:nowrap;line-height:1.3}
@@ -150,7 +152,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v4</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
