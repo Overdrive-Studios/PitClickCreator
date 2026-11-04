@@ -103,7 +103,7 @@ input.w6{width:6.2em}
 select{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:4px 6px}
 
 .scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:720px}
+table{border-collapse:collapse;width:100%;min-width:980px}
 th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:500;text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
 tr.sel td{background:var(--amber-soft)}
@@ -111,6 +111,8 @@ tr[data-sid]{cursor:pointer}
 td input.lab{width:3em;font:800 14px var(--f-mark);text-align:center}
 td input.nm{width:9em}
 .where{font-size:12px;color:var(--muted)}
+.tcell{display:inline-flex;align-items:center;gap:4px}
+td select{max-width:11em}
 .acts{display:flex;gap:4px}
 
 .ents{display:flex;flex-direction:column}
@@ -188,7 +190,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
   <div class="grid">
     <section class="panel" id="mapPanel">
       <h2>Tempo map</h2>
-      <p class="sub">How the track was recorded. Get bar 1 and each tempo or meter change lined up here. Split off any vamp or cuttable bars into their own section.</p>
+      <p class="sub">How the track was recorded. Get bar 1 and each tempo or meter change lined up here. Type any time signature (6/8, 7/8, 5/4…), and pick which note the BPM counts, like ♩. = 60 for a 6/8. Split off any vamp or cuttable bars into their own section.</p>
       <div class="bar">
         <span class="lbl">Bar 1 at</span>
         <span class="nudge">
@@ -217,7 +219,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
       </div>
       <div class="scroll">
         <table>
-          <thead><tr><th>Mark</th><th>Name</th><th>Bars</th><th>BPM</th><th>Beats/bar</th><th>Nudge ms</th><th>Click</th><th>Where</th><th></th></tr></thead>
+          <thead><tr><th>Mark</th><th>Name</th><th>Bars</th><th>Time sig</th><th>Tempo</th><th>Click plays</th><th>Nudge ms</th><th>Click</th><th>Where</th><th></th></tr></thead>
           <tbody id="mapBody"></tbody>
         </table>
       </div>
@@ -271,6 +273,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
     </section>
   </div>
 </div>
+<datalist id="sigList"><option value="4/4"><option value="3/4"><option value="2/4"><option value="2/2"><option value="5/4"><option value="6/8"><option value="7/8"><option value="5/8"><option value="9/8"><option value="12/8"><option value="3/8"><option value="7/4"></datalist>
 <div class="toast" id="toast" hidden></div>
 <div class="drop" id="drop" hidden>Drop the track to load it</div>
 <div class="busy" id="busy" hidden><span id="busyMsg">Working…</span></div>
@@ -280,7 +283,65 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 const $ = s => document.querySelector(s);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const uid = () => Math.random().toString(36).slice(2, 9);
-const barDur = o => o.beats * 60 / o.bpm;
+const UNITS = {"16":0.25, "8":0.5, "8.":0.75, "4":1, "4.":1.5, "2":2, "2.":3};
+const USYM = {"16":"16th", "8":"♪", "8.":"♪.", "4":"♩", "4.":"♩.", "2":"half", "2.":"dotted half"};
+const UNAME = {"16":"16th", "8":"♪ 8th", "8.":"♪. dotted 8th", "4":"♩ quarter", "4.":"♩. dotted quarter", "2":"half", "2.":"dotted half"};
+const DSYM = {1:"whole", 2:"half", 4:"♩", 8:"♪", 16:"16th"};
+function meterCells(o, tag){
+  const unitOpts = Object.keys(UNITS).map(u => `<option value="${u}" ${u === o.unit ? "selected" : ""}>${UNAME[u]}</option>`).join("");
+  const grouped = !simple(o);
+  return {
+    sig: `<input type="text" data-f="sig" value="${o.num}/${o.den}" list="sigList" style="width:4.2em" class="num" aria-label="Time signature">` +
+         (grouped || o.den >= 8 ? ` <input type="text" data-f="groups" value="${o.groups.join("+")}" style="width:5.4em" class="num" title="Beat grouping, e.g. 2+2+3" aria-label="Beat grouping">` : ""),
+    tempo: `<select data-f="unit" aria-label="BPM counts">${unitOpts}</select> = <input type="number" data-f="bpm" value="${fmtBpm(o.bpm)}" min="10" max="600" step="0.01" class="w6" aria-label="BPM">`,
+    clickOn: grouped ? `<select data-f="clickOn" aria-label="Click plays"><option value="all" ${o.clickOn === "all" ? "selected" : ""}>Every ${DSYM[o.den] || "note"}</option><option value="groups" ${o.clickOn === "groups" ? "selected" : ""}>Beats ${o.groups.join("+")}</option></select>` : `<span class="muted">Every ${DSYM[o.den] || "beat"}</span>`
+  };
+}
+// apply an edit to a meter field; returns false (with a toast) if invalid
+function editMeter(o, f, v){
+  if (f === "sig"){ const sg = parseSig(v); if (!sg){ toast("Type a time signature like 4/4, 6/8 or 7/8."); return false; } if (sg.num !== o.num || sg.den !== o.den) setSig(o, sg); return true; }
+  if (f === "groups"){ const g = parseGroups(v, o.num); if (!g){ toast(`Grouping must add up to ${o.num}, e.g. ${defGroups(o.num, o.den).join("+")}.`); return false; } o.groups = g; if (simple(o)) o.clickOn = "all"; return true; }
+  if (f === "unit"){ if (UNITS[v]) o.unit = v; return true; }
+  if (f === "clickOn"){ o.clickOn = v === "groups" ? "groups" : "all"; return true; }
+  if (f === "bpm"){ o.bpm = clamp(+v || o.bpm, 10, 600); return true; }
+  return false;
+}
+const isCompound = (n, d) => d >= 8 && n % 3 === 0 && n > 3;
+function defGroups(n, d){
+  if (d < 8) return Array(n).fill(1);
+  if (isCompound(n, d)) return Array(n / 3).fill(3);
+  if (n <= 3) return [n];
+  const g = Array(Math.floor(n / 2)).fill(2); if (n % 2) g[g.length - 1] = 3; return g;
+}
+function defUnit(n, d){ if (isCompound(n, d)) return d === 16 ? "8." : "4."; return ({1:"4",2:"2",4:"4",8:"8",16:"16"})[d] || "4"; }
+function parseSig(str){ const m = String(str).match(/^\s*(\d{1,2})\s*\/\s*(1|2|4|8|16)\s*$/); if (!m) return null; const n = +m[1]; return n >= 1 && n <= 32 ? {num:n, den:+m[2]} : null; }
+function parseGroups(str, n){ const g = String(str).split(/[^0-9]+/).filter(Boolean).map(Number); return g.length && g.every(x => x > 0) && g.reduce((a, b) => a + b, 0) === n ? g : null; }
+function setSig(o, sig){ o.num = sig.num; o.den = sig.den; o.groups = defGroups(sig.num, sig.den); o.unit = defUnit(sig.num, sig.den); o.clickOn = isCompound(sig.num, sig.den) ? "groups" : "all"; }
+function normMeter(o){
+  if (o.num == null){ o.num = o.beats || 4; o.den = 4; o.unit = "4"; }
+  delete o.beats;
+  if (!UNITS[o.unit]) o.unit = defUnit(o.num, o.den);
+  if (!Array.isArray(o.groups) || o.groups.reduce((a, b) => a + b, 0) !== o.num) o.groups = defGroups(o.num, o.den);
+  if (o.clickOn !== "groups" && o.clickOn !== "all") o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
+  return o;
+}
+function normAll(){ S.sections.forEach(normMeter); S.arr.forEach(e => { if (e.kind === "click") normMeter(e); }); }
+const meterOf = o => ({bpm:o.bpm, num:o.num, den:o.den, unit:o.unit, groups:o.groups, clickOn:o.clickOn});
+const pulse = o => (60 / o.bpm) * (4 / o.den) / UNITS[o.unit];   // seconds per denominator note
+const barDur = o => o.num * pulse(o);
+const simple = o => o.groups.every(g => g === 1);
+// main clicks in one bar: [time, kind, beatNo]
+function barClicks(o){
+  const p = pulse(o), out = []; let pos = 0, beatNo = 0;
+  o.groups.forEach((g, gi) => {
+    if (o.clickOn === "groups"){ out.push([pos * p, gi === 0 ? "acc" : "beat", ++beatNo, g * p]); }
+    else for (let k = 0; k < g; k++) out.push([(pos + k) * p, pos + k === 0 ? "acc" : (k === 0 || simple(o)) ? "beat" : "sub", ++beatNo, p]);
+    pos += g;
+  });
+  return out;
+}
+const sigTxt = o => `${o.num}/${o.den}${simple(o) || isCompound(o.num, o.den) && o.groups.every(g => g === 3) ? "" : " (" + o.groups.join("+") + ")"}`;
+const tempoTxt = o => `${USYM[o.unit]} = ${fmtBpm(o.bpm)}`;
 function fmtT(t){ t = Math.max(0, t); const m = Math.floor(t/60); const s = t - m*60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); }
 function fmtT2(t){ const m = Math.floor(t/60); const s = t - m*60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(2); }
 const fmtBpm = b => (Math.round(b*100)/100).toString();
@@ -305,7 +366,7 @@ function mut(fn, keepPh){
 }
 function undo(){
   if (!hist.length) { toast("Nothing to undo"); return; }
-  const o = JSON.parse(hist.pop()); Object.assign(S, o); saveLocal(); stopIfPlaying(); renderAll(); toast("Undone");
+  const o = JSON.parse(hist.pop()); Object.assign(S, o); normAll(); saveLocal(); stopIfPlaying(); renderAll(); toast("Undone");
 }
 function storeKey(){ return track ? "pitclick:" + track.name + ":" + Math.round(track.dur) : null; }
 function saveLocal(){ clearTimeout(saveLocal.h); saveLocal.h = setTimeout(() => { try { const k = storeKey(); if (k && !track.demo) localStorage.setItem(k, snapshot()); } catch(e){} }, 300); }
@@ -337,7 +398,7 @@ function build(v){
       secs.forEach((s, i) => {
         const nx = secs[i+1];
         const end = nx ? Math.min(s.end, nx.start) : s.end;
-        push({kind:"sec", sid:s.id, dur:end - Math.max(0, s.start), src:Math.max(0, s.start), bpm:s.bpm, beats:s.beats, bar, bars:s.bars, click:!s.mute, clickFrom:Math.max(0, -s.start), label:s.label, name:s.name});
+        push({kind:"sec", sid:s.id, dur:end - Math.max(0, s.start), src:Math.max(0, s.start), ...meterOf(s), bar, bars:s.bars, click:!s.mute, clickFrom:Math.max(0, -s.start), label:s.label, name:s.name});
         bar += s.bars;
         if (nx && nx.start > s.end) push({kind:"gap", dur:nx.start - s.end, src:s.end, click:false});
       });
@@ -351,7 +412,7 @@ function build(v){
       const P = (e0.kind === "sec" && secs[0] && e0.sec === secs[0].id && !e0.skipStart) ? Math.max(0, secs[0].start) : 0;
       const C = S.set.countIn * barDur(i0);
       const L = Math.max(P, C);
-      if (L > 0) push({kind:"lead", dur:L, src: P > 0 ? secs[0].start - L : null, bpm:i0.bpm, beats:i0.beats, bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
+      if (L > 0) push({kind:"lead", dur:L, src: P > 0 ? secs[0].start - L : null, ...meterOf(i0), bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
     }
     let bar = 1; let lastEnt = null;
     ents.forEach((e) => {
@@ -362,11 +423,11 @@ function build(v){
         if (nb <= 0) return;
         const reps = Math.max(1, e.repeat | 0);
         for (let p = 0; p < reps; p++){
-          push({kind:"sec", sid:s.id, ent:ei, pass:p, passes:reps, open:!!e.open, dur:nb*bd, src:s.start + (e.skipStart||0)*bd, bpm:s.bpm, beats:s.beats, bar, bars:nb, click:!s.mute, clickFrom:0, label:s.label, name:s.name});
+          push({kind:"sec", sid:s.id, ent:ei, pass:p, passes:reps, open:!!e.open, dur:nb*bd, src:s.start + (e.skipStart||0)*bd, ...meterOf(s), bar, bars:nb, click:!s.mute, clickFrom:0, label:s.label, name:s.name});
           bar += nb;
         }
       } else {
-        push({kind:"click", ent:ei, pass:0, passes:1, dur:e.bars*barDur(e), src:null, bpm:e.bpm, beats:e.beats, bar, bars:e.bars, click:true, clickFrom:0, label:e.label || "+", name:e.name || "Click bars"});
+        push({kind:"click", ent:ei, pass:0, passes:1, dur:e.bars*barDur(e), src:null, ...meterOf(e), bar, bars:e.bars, click:true, clickFrom:0, label:e.label || "+", name:e.name || "Click bars"});
         bar += e.bars;
       }
       lastEnt = e;
@@ -462,12 +523,18 @@ function trackBuf(){
 // beat times inside a chunk (seconds from chunk start), with kinds
 function beatsOf(c){
   const out = []; if (!c.click || !c.bpm) return out;
-  const bd = 60 / c.bpm, sub = S.set.sub | 0 || 1, from = c.clickFrom || 0;
-  for (let k = 0; ; k++){
-    const tb = from + k*bd; if (tb >= c.dur - 1e-6) break;
-    for (let j = 0; j < sub; j++){
-      const t = tb + j*bd/sub; if (t >= c.dur - 1e-6) break;
-      out.push([t, j > 0 ? "sub" : (k % c.beats === 0 && S.set.accent ? "acc" : "beat")]);
+  const bd = barDur(c), from = c.clickFrom || 0, bc = barClicks(c);
+  const sub = S.set.sub | 0 || 1;
+  for (let b = 0; ; b++){
+    const tb = from + b * bd; if (tb >= c.dur - 1e-6) break;
+    for (const [t0, k0, , len] of bc){
+      const k = k0 === "acc" && !S.set.accent ? "beat" : k0;
+      // subdivide each click: simple meters by the setting; grouped clicks fill in their pulses
+      const n = c.clickOn === "groups" ? (sub > 1 ? Math.round(len / pulse(c)) : 1) : (simple(c) ? sub : 1);
+      for (let j = 0; j < n; j++){
+        const t = tb + t0 + j * len / n; if (t >= c.dur - 1e-6) break;
+        out.push([t, j > 0 ? "sub" : k]);
+      }
     }
   }
   return out;
@@ -476,6 +543,7 @@ function beatsOf(c){
 let P = null, pumpTimer = null, rafId = null;
 function play(){
   if (!S) return;
+  if (P) stop();
   const c = ac(); c.resume();
   trackBuf(); clickBufs(); applyMix();
   const live = liveChunks(); if (!live.length) return;
@@ -489,7 +557,9 @@ function play(){
     if (from < L.rt + span - 1e-6){ idx = i; within = (from - L.rt) % L.dur; break; }
   }
   if (idx < 0){ idx = 0; within = 0; }
-  P = {live, idx, within:Math.max(0, within), when:c.currentTime + 0.08, nodes:[], sched:[], go:false, passNo:0, endAt:null};
+  // each playback gets its own output gates; stop() disconnects them so nothing can keep sounding
+  const tOut = c.createGain(), cOut = c.createGain(); tOut.connect(trackBus); cOut.connect(clickBus);
+  P = {live, idx, within:Math.max(0, within), when:c.currentTime + 0.08, nodes:new Set(), sched:[], go:false, passNo:0, endAt:null, tOut, cOut};
   pump(); pumpTimer = setInterval(pump, 25);
   $("#playBtn").textContent = "❚❚"; $("#playBtn").setAttribute("aria-label","Pause");
   loop();
@@ -516,27 +586,29 @@ function schedule(ch, when, within){
     if (sp < 0){ w -= sp; d += sp; sp = 0; }
     if (d > 0.002 && sp < track.dur){
       const n = c.createBufferSource(); n.buffer = tb;
-      const g = c.createGain(); n.connect(g); g.connect(trackBus);
+      const g = c.createGain(); n.connect(g); g.connect(P.tOut);
       const F = 0.004, fi = within > 0 || !ch.contPrev, fo = ch.open || !ch.contNext;
       g.gain.setValueAtTime(fi ? 0 : 1, w); if (fi) g.gain.linearRampToValueAtTime(1, w + F);
       if (fo){ g.gain.setValueAtTime(1, w + d - F); g.gain.linearRampToValueAtTime(0, w + d); }
       n.start(w, sp, fo ? d : d + 0.01);
-      P.nodes.push(n);
+      track_(n);
     }
   }
   const cb = clickBufs();
   for (const [t, k] of beatsOf(ch)){
     if (t < within - 1e-6) continue;
-    const n = c.createBufferSource(); n.buffer = cb[k]; n.connect(clickBus);
-    n.start(when + t - within); P.nodes.push(n);
+    const n = c.createBufferSource(); n.buffer = cb[k]; n.connect(P.cOut);
+    n.start(when + t - within); track_(n);
   }
-  if (P.nodes.length > 400) P.nodes = P.nodes.slice(-300);
 }
+function track_(n){ const set = P.nodes; set.add(n); n.onended = () => set.delete(n); }
 function stop(){
-  if (!P) return;
-  for (const n of P.nodes){ try { n.stop(); } catch(e){} }
   clearInterval(pumpTimer); cancelAnimationFrame(rafId);
-  P = null;
+  if (!P) return;
+  const p = P; P = null;
+  try { const t = actx.currentTime; p.tOut.gain.setValueAtTime(p.tOut.gain.value, t); p.tOut.gain.linearRampToValueAtTime(0, t + 0.01); p.cOut.gain.setValueAtTime(0, t); } catch(e){}
+  for (const n of p.nodes){ try { n.stop(); } catch(e){} }
+  setTimeout(() => { try { p.tOut.disconnect(); p.cOut.disconnect(); } catch(e){} }, 30);
   $("#playBtn").textContent = "▶"; $("#playBtn").setAttribute("aria-label","Play");
   updateReadout(); markNow(null);
 }
@@ -578,10 +650,11 @@ function updateReadout(lp){
     if (c.bpm && (c.kind === "sec" || c.kind === "click" || c.kind === "lead")){
       const bd = barDur(c), from = c.clickFrom || 0;
       const w = Math.max(0, within - from);
-      const bi = Math.floor(w / bd + 1e-6), beat = Math.floor((w - bi*bd) / (60/c.bpm) + 1e-6) + 1;
-      if (c.kind === "lead") barTxt = within < from ? "pickup" : "count " + (bi + 1) + " · " + Math.min(beat, c.beats);
-      else barTxt = "m. " + (c.bar + Math.min(bi, c.bars - 1)) + " · " + Math.min(beat, c.beats);
-      bpmTxt = fmtBpm(c.bpm) + " · " + c.beats + "/bar";
+      const bi = Math.floor(w / bd + 1e-6), inBar = w - bi * bd;
+      let beat = 1; for (const [t, , n] of barClicks(c)) if (t <= inBar + 1e-6) beat = n;
+      if (c.kind === "lead") barTxt = within < from ? "pickup" : "count " + (bi + 1) + " · " + beat;
+      else barTxt = "m. " + (c.bar + Math.min(bi, c.bars - 1)) + " · " + beat;
+      bpmTxt = tempoTxt(c) + " · " + sigTxt(c);
     }
     if (c.kind === "sec" || c.kind === "click"){
       const passTxt = c.open ? (lp ? ` <span class="badge">pass ${lp.pass + 1}</span>` : ` <span class="badge">till ready</span>`) : (c.passes > 1 ? ` <span class="badge">${c.pass + 1}/${c.passes}</span>` : "");
@@ -653,13 +726,13 @@ function drawLane(){
   let lastLbl = -1e9;
   r.forEach(c => {
     if (!c.bpm || !(c.kind === "sec" || c.kind === "click" || c.kind === "lead")) return;
-    const bd = barDur(c), beat = 60 / c.bpm, from = c.clickFrom || 0;
-    const showBeats = beat * pps > 9;
+    const bd = barDur(c), from = c.clickFrom || 0, bc = barClicks(c).filter(x => x[1] !== "sub");
+    const showBeats = (bd / bc.length) * pps > 9;
     for (let b = 0; ; b++){
       const tb = c.t + from + b * bd; if (tb >= c.t + c.dur - 1e-6) break;
       const x = Math.round(tb * pps) + 0.5;
       g.fillStyle = C.line; g.fillRect(x - 0.5, 24, 1, H - 24);
-      if (showBeats){ g.fillStyle = C.line; for (let k = 1; k < c.beats; k++){ const xb = (tb + k*beat) * pps; if (xb < (c.t + c.dur) * pps) g.fillRect(Math.round(xb), bot - 6, 1, 6); } }
+      if (showBeats){ g.fillStyle = C.line; for (let k = 1; k < bc.length; k++){ const xb = (tb + bc[k][0]) * pps; if (xb < (c.t + c.dur) * pps) g.fillRect(Math.round(xb), bot - 6, 1, 6); } }
       const n = c.kind === "lead" ? "c" + (b + 1) : String(c.bar + b);
       if (x - lastLbl > 26 && c.kind !== "lead" || (c.kind === "lead" && x - lastLbl > 18)){ g.fillStyle = C.muted; g.fillText(n, x + 3, 26); lastLbl = x; }
     }
@@ -685,7 +758,7 @@ function drawLane(){
       g.fillStyle = isV ? C.vamp : C.ink; g.textAlign = "center"; g.fillText(c.label, x + 3 + lw/2, 12.5); g.textAlign = "left";
       if (w > lw + 40){
         g.font = "500 12px " + css("--f-ui"); g.fillStyle = C.ink;
-        let nm = (c.name || "") + (c.open ? "  · till ready" : c.passes > 1 ? "  · ×" + c.passes : "");
+        let nm = (c.name || "") + "  " + sigTxt(c) + " " + tempoTxt(c) + (c.open ? "  · till ready" : c.passes > 1 ? "  · ×" + c.passes : "");
         g.save(); g.beginPath(); g.rect(x + lw + 8, 0, Math.max(0, w - lw - 12), 24); g.clip(); g.fillText(nm, x + lw + 10, 12.5); g.restore();
       }
     }
@@ -711,12 +784,14 @@ function renderMap(){
   let bar = 1;
   $("#mapBody").innerHTML = S.sections.map((s, i) => {
     const w = `mm. ${bar}–${bar + s.bars - 1} · ${fmtT2(Math.max(0, s.start))}`; bar += s.bars;
+    const mc = meterCells(s);
     return `<tr data-sid="${s.id}" class="${s.id === selSec ? "sel" : ""}">
       <td><input class="lab" type="text" data-f="label" value="${esc(s.label)}" maxlength="4" aria-label="Rehearsal mark"></td>
       <td><input class="nm" type="text" data-f="name" value="${esc(s.name)}" aria-label="Section name"></td>
       <td><input type="number" data-f="bars" value="${s.bars}" min="1" step="1" aria-label="Bars"></td>
-      <td><input type="number" data-f="bpm" value="${fmtBpm(s.bpm)}" min="20" max="400" step="0.01" class="w6" aria-label="BPM"></td>
-      <td><input type="number" data-f="beats" value="${s.beats}" min="1" max="16" step="1" aria-label="Beats per bar"></td>
+      <td>${mc.sig}</td>
+      <td><span class="tcell">${mc.tempo}<button class="btn sm" data-a="x2" title="Double the tempo">×2</button><button class="btn sm" data-a="h2" title="Halve the tempo">÷2</button></span></td>
+      <td>${mc.clickOn}</td>
       <td><input type="number" data-f="nudge" value="${Math.round(s.nudge||0)}" step="5" ${i === 0 ? 'disabled title="Use Bar 1 offset for the first section"' : ""} aria-label="Start nudge in milliseconds"></td>
       <td><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"} aria-label="Click on"></td>
       <td class="where num">${w}</td>
@@ -726,7 +801,7 @@ function renderMap(){
         <button class="btn sm" data-a="merge" title="Merge with the next section" ${i === S.sections.length - 1 ? "disabled" : ""}>Merge ↓</button>
         <button class="btn sm danger" data-a="del" title="Remove (later sections stay where they are)">✕</button>
       </div></td></tr>`;
-  }).join("") || `<tr><td colspan="9" class="muted">No sections yet. Auto-detect, or add one.</td></tr>`;
+  }).join("") || `<tr><td colspan="10" class="muted">No sections yet. Auto-detect, or add one.</td></tr>`;
   refocus(fk);
 }
 $("#mapBody").addEventListener("click", e => {
@@ -736,10 +811,11 @@ $("#mapBody").addEventListener("click", e => {
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "detect") detectSection(s);
+  if (act === "x2" || act === "h2"){ mut(() => s.bpm = clamp(act === "x2" ? s.bpm * 2 : s.bpm / 2, 10, 600)); toast(`${s.label}: ${tempoTxt(s)}`); }
   if (act === "here") startSecAt(s, srcPlayhead());
   if (act === "merge"){
     const n = S.sections[i+1]; if (!n) return;
-    if (Math.abs(n.bpm - s.bpm) > 0.001 || n.beats !== s.beats){ toast(`${s.label} and ${n.label} have different tempo or meter. Match them first.`); return; }
+    if (Math.abs(barDur(n) - barDur(s)) > 1e-6 || sigTxt(n) !== sigTxt(s) || n.unit !== s.unit || n.clickOn !== s.clickOn){ toast(`${s.label} and ${n.label} have different tempo or meter. Match them first.`); return; }
     mut(() => { s.bars += n.bars; S.sections.splice(i+1, 1); S.arr = S.arr.filter(e => e.sec !== n.id); });
     toast(`Merged ${n.label} into ${s.label}`);
   }
@@ -762,8 +838,7 @@ $("#mapBody").addEventListener("change", e => {
     if (f === "label") s.label = v.trim() || nextLabel();
     else if (f === "name") s.name = v;
     else if (f === "bars") s.bars = clamp(Math.round(+v || 1), 1, 9999);
-    else if (f === "bpm") s.bpm = clamp(+v || s.bpm, 20, 400);
-    else if (f === "beats") s.beats = clamp(Math.round(+v || 4), 1, 16);
+    else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(s, f, v)) return; }
     else if (f === "nudge") s.nudge = +v || 0;
     else if (f === "click") s.mute = !e.target.checked;
   });
@@ -783,7 +858,8 @@ function startSecAt(s, t){
 document.querySelectorAll("[data-off]").forEach(b => b.addEventListener("click", () => {
   const k = b.dataset.off; const s0 = S.sections[0];
   if (k === "ph"){ const t = srcPlayhead(); if (t == null) return toast("Move the playhead onto track audio first."); mut(() => S.offset = Math.max(0, t)); return; }
-  const d = k === "beat" ? (s0 ? 60 / s0.bpm : 0.5) : k === "-beat" ? -(s0 ? 60 / s0.bpm : 0.5) : +k;
+  const bl = s0 ? barDur(s0) / barClicks(s0).filter(x => x[1] !== "sub").length : 0.5;
+  const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
   mut(() => S.offset = Math.max(0, +(S.offset + d).toFixed(4)));
 }));
 $("#offIn").addEventListener("change", e => mut(() => S.offset = Math.max(0, +e.target.value || 0)));
@@ -796,7 +872,7 @@ function splitAtPlayhead(){
   if (k <= 0 || k >= s.bars) return toast("Move the playhead nearer a bar line inside the section.");
   const L = nextLabel();
   mut(() => {
-    const n = {id:uid(), label:L, name:s.name ? s.name + " (cont.)" : "", bars:s.bars - k, bpm:s.bpm, beats:s.beats, nudge:0, mute:s.mute};
+    const n = {id:uid(), label:L, name:s.name ? s.name + " (cont.)" : "", bars:s.bars - k, ...meterOf(s), groups:s.groups.slice(), nudge:0, mute:s.mute};
     s.bars = k; S.sections.splice(S.sections.indexOf(s) + 1, 0, n);
     const out = [];
     for (const e of S.arr){
@@ -813,7 +889,7 @@ function splitAtPlayhead(){
 $("#splitBtn").onclick = splitAtPlayhead;
 $("#addSec").onclick = () => {
   const last = S.sections[S.sections.length - 1];
-  mut(() => { const n = {id:uid(), label:nextLabel(), name:"", bars:8, bpm:last ? last.bpm : 120, beats:last ? last.beats : 4, nudge:0, mute:false}; S.sections.push(n); S.arr.push({id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0}); selSec = n.id; });
+  mut(() => { const n = normMeter({id:uid(), label:nextLabel(), name:"", bars:8, ...(last ? meterOf(last) : {bpm:120, num:4, den:4, unit:"4"}), nudge:0, mute:false}); if (last) n.groups = last.groups.slice(); S.sections.push(n); S.arr.push({id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0}); selSec = n.id; });
 };
 
 /* arrangement */
@@ -832,8 +908,9 @@ function renderArr(){
           <label>Mark <input type="text" data-f="label" value="${esc(e.label||"+")}" style="width:3em" maxlength="4"></label>
           <label>Name <input type="text" data-f="name" value="${esc(e.name||"")}" style="width:9em"></label>
           <label>Bars <input type="number" data-f="bars" value="${e.bars}" min="1"></label>
-          <label>BPM <input type="number" data-f="bpm" value="${fmtBpm(e.bpm)}" min="20" max="400" step="0.01" class="w6"></label>
-          <label>Beats/bar <input type="number" data-f="beats" value="${e.beats}" min="1" max="16"></label>
+          <label>Time sig ${meterCells(e).sig}</label>
+          <label>Tempo ${meterCells(e).tempo}</label>
+          ${simple(e) ? "" : `<label>Click ${meterCells(e).clickOn}</label>`}
         </div></div>`;
     }
     const s = secById(e.sec); if (!s) return "";
@@ -842,7 +919,7 @@ function renderArr(){
     return `<div class="ent${isV ? " isvamp" : ""}" data-i="${i}">
       <span class="mark${isV ? " vamp" : ""}">${esc(s.label)}</span>
       <div class="info"><div class="nm">${esc(s.name || "Section " + s.label)}${e.open ? '<span class="badge">till ready</span>' : e.repeat > 1 ? `<span class="badge">×${e.repeat}</span>` : ""}</div>
-        <small>${sp} · ${nb} of ${s.bars} bars · ${fmtBpm(s.bpm)} bpm · ${s.beats}/bar</small></div>
+        <small>${sp} · ${nb} of ${s.bars} bars · ${esc(sigTxt(s))} · ${esc(tempoTxt(s))}</small></div>
       <div class="acts">${moveBtns(i)}</div>
       <div class="ctl">
         <label>Plays <input type="number" data-f="repeat" value="${e.repeat}" min="1" max="99" title="How many times this section plays (export uses this for open vamps)"></label>
@@ -875,14 +952,13 @@ $("#ents").addEventListener("change", e => {
     else if (f === "repeat") en.repeat = clamp(Math.round(+v || 1), 1, 99);
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
     else if (f === "bars") en.bars = clamp(Math.round(+v || 1), 1, 999);
-    else if (f === "bpm") en.bpm = clamp(+v || 120, 20, 400);
-    else if (f === "beats") en.beats = clamp(Math.round(+v || 4), 1, 16);
+    else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(en, f, v)) return; }
   });
 });
 $("#addEnt").onclick = () => { const id = $("#addSel").value; if (!id) return; mut(() => S.arr.push({id:uid(), kind:"sec", sec:id, repeat:1, open:false, skipStart:0, skipEnd:0})); };
 $("#addClick").onclick = () => {
   const r = tl(); const c = chunkAt(playhead);
-  mut(() => S.arr.push({id:uid(), kind:"click", label:"+", name:"Extra bars", bars:2, bpm:c && c.bpm ? c.bpm : 120, beats:c && c.beats ? c.beats : 4}));
+  mut(() => S.arr.push(normMeter({id:uid(), kind:"click", label:"+", name:"Extra bars", bars:2, ...(c && c.bpm ? meterOf(c) : {bpm:120, num:4, den:4, unit:"4"})})));
   toast("Click-only bars added at the end. Move them with ↑.");
 };
 $("#resetArr").onclick = () => mut(() => S.arr = defaultArr());
@@ -964,13 +1040,15 @@ document.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z"){ if (e.target.matches("input[type=text]")) return; e.preventDefault(); undo(); return; }
   if (e.target.matches("input, select, textarea") || e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key.toLowerCase();
-  if (e.code === "Space"){ e.preventDefault(); P ? stop() : play(); }
+  if (e.code === "Space"){ e.preventDefault(); if (e.repeat) return; P ? stop() : play(); }
   else if (k === "g"){ goPress(); }
   else if (k === "t"){ tap(); }
   else if (k === "s"){ splitAtPlayhead(); }
   else if (e.key === "Home"){ $("#homeBtn").click(); }
 });
 
+document.addEventListener("keyup", e => { if (e.code === "Space" && e.target.matches("button, label")) e.preventDefault(); });
+document.querySelectorAll(".transport button").forEach(b => b.addEventListener("mouseup", () => b.blur()));
 /* ---------------- tempo detection ---------------- */
 function makeFFT(n){
   const rev = new Uint32Array(n), bits = Math.log2(n);
@@ -1038,17 +1116,19 @@ function detectTempo(t0, t1){
 async function detectAll(){
   if (!track) return;
   await busy("Detecting tempo…");
-  const r = detectTempo(0, track.dur); busy("");
-  if (!r){ toast("Couldn't find a steady beat. Tap along instead."); return; }
-  const bd = 60 / r.bpm;
-  let first = r.beat + Math.ceil((r.firstOnset - r.beat - 0.06) / bd) * bd; if (first < 0) first += bd;
-  const beats = 4, bars = Math.max(1, Math.floor((track.dur - first) / (bd * beats) + 0.25));
+  let r = null; try { r = detectTempo(0, track.dur); } catch(e){ r = null; }
+  busy("");
+  const bpm = r ? r.bpm : 120, bd = 60 / bpm;
+  let first = 0;
+  if (r){ first = r.beat + Math.ceil((r.firstOnset - r.beat - 0.06) / bd) * bd; if (first < 0) first += bd; }
+  const bars = Math.max(1, Math.floor((track.dur - first) / (bd * 4) + 0.25));
   mut(() => {
     S.offset = +first.toFixed(4);
-    S.sections = [{id:uid(), label:"A", name:"From top", bars, bpm:r.bpm, beats, nudge:0, mute:false}];
+    S.sections = [normMeter({id:uid(), label:"A", name:"From top", bars, bpm, num:4, den:4, unit:"4", nudge:0, mute:false})];
     S.arr = defaultArr(); selSec = S.sections[0].id;
   });
-  toast(`Detected ${fmtBpm(r.bpm)} bpm. Check bar 1, then split at each tempo or meter change.`);
+  if (r) toast(`Detected ♩ = ${fmtBpm(bpm)}. If it's double or half, use ×2 or ÷2. Then set bar 1 and split at each change.`);
+  else toast("Couldn't hear a steady beat, so it's set to ♩ = 120 in 4/4. Type the tempo in, or tap along with T.");
 }
 $("#detectAll").onclick = detectAll;
 async function detectSection(s){
@@ -1057,7 +1137,11 @@ async function detectSection(s){
   if (t1 - s.start < 4) return toast("Section is too short to detect. Tap along instead.");
   await busy("Detecting tempo…"); const r = detectTempo(Math.max(0, s.start), t1); busy("");
   if (!r) return toast("Couldn't find a steady beat in " + s.label + ".");
-  mut(() => s.bpm = r.bpm); toast(`${s.label}: ${fmtBpm(r.bpm)} bpm`);
+  // detected pulse may be any level (8ths, beats, bars); pick the multiple closest to the current marking
+  let best = r.bpm, bd = Infinity;
+  for (const f of [1/4, 1/3, 1/2, 2/3, 1, 1.5, 2, 3, 4]){ const v = r.bpm * f; const d = Math.abs(Math.log(v / s.bpm)); if (d < bd){ bd = d; best = v; } }
+  best = Math.abs(best - Math.round(best)) < 0.05 ? Math.round(best) : Math.round(best * 100) / 100;
+  mut(() => s.bpm = best); toast(`${s.label}: ${tempoTxt(s)}`);
 }
 
 /* ---------------- loading ---------------- */
@@ -1088,7 +1172,7 @@ async function loadFile(file){
     const saved = loadLocal();
     S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}};
     busy("");
-    if (saved){ Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; selSec = S.sections[0] && S.sections[0].id; setViewSilent("map"); renderAll(); toast("Restored your tempo map for this track."); }
+    if (saved){ Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; normAll(); selSec = S.sections[0] && S.sections[0].id; setViewSilent("map"); renderAll(); toast("Restored your tempo map for this track."); }
     else { setViewSilent("map"); renderAll(); await detectAll(); hist.length = 0; renderAll(); }
   } catch(err){
     busy(""); toast("Couldn't read that file. Try WAV, MP3, M4A or FLAC.");
@@ -1110,10 +1194,12 @@ function makeDemo(){
     {label:"B", name:"Verse", bars:8, bpm:100, beats:4, ch:[[57,60,64],[57,60,64],[50,53,57],[50,53,57],[53,57,60],[55,59,62],[57,60,64],[52,56,59]]},
     {label:"C", name:"Vamp", bars:2, bpm:100, beats:4, ch:[[50,53,57],[52,56,59]], vamp:true},
     {label:"D", name:"Waltz", bars:8, bpm:132, beats:3, ch:[[57,61,64],[54,57,61],[50,54,57],[52,56,59]]},
-    {label:"E", name:"Tag", bars:2, bpm:84, beats:4, ch:[[50,53,57],[57,61,64]]},
+    {label:"E", name:"Seven", bars:4, bpm:210, beats:7, den:8, groups:[2,2,3], ch:[[50,53,57],[48,52,55]]},
+    {label:"F", name:"Tag", bars:2, bpm:84, beats:4, ch:[[50,53,57],[57,61,64]]},
   ];
   const offset = 0.6;
-  let total = offset; plan.forEach(p => total += p.bars * p.beats * 60 / p.bpm); total += 2.4;
+  plan.forEach(p => { p.den = p.den || 4; p.pd = 60 / p.bpm; });   // bpm counts the denominator note
+  let total = offset; plan.forEach(p => total += p.bars * p.beats * p.pd); total += 2.4;
   const len = Math.ceil(total * sr), L = new Float32Array(len), R = new Float32Array(len);
   const hz = n => 440 * Math.pow(2, (n - 69) / 12);
   const add = (t, dur, fn, gl, gr) => { const a = Math.floor(t * sr), n = Math.floor(dur * sr); for (let i = 0; i < n && a + i < len; i++){ const v = fn(i / sr); L[a+i] += v * gl; R[a+i] += v * gr; } };
@@ -1124,13 +1210,15 @@ function makeDemo(){
   add(0, 0.55, tone(hz(76), 0.18, 4), 0.7, 0.9);  // pickup note
   let t = offset;
   plan.forEach(p => {
-    const bd = 60 / p.bpm;
+    const bd = p.pd;
     for (let b = 0; b < p.bars; b++){
       const chd = p.ch[b % p.ch.length], bt = t + b * p.beats * bd;
       chd.forEach((n, j) => add(bt, p.beats * bd + 0.3, tone(hz(n), 0.05, 0.9), 0.6 + j*0.15, 0.95 - j*0.15));
       add(bt, 0.6, tone(hz(chd[0] - 24), 0.22, 3.5), 0.8, 0.8);
       for (let k = 0; k < p.beats; k++){
         const tb = bt + k * bd;
+        const gStart = p.groups ? p.groups.reduce((a, g, i) => (a.push((a[i-1] || 0) + (i ? p.groups[i-1] : 0)), a), []).includes(k) : true;
+        if (p.groups){ if (k === 0) add(tb, 0.35, kick, 0.8, 0.8); if (gStart && k) add(tb, 0.05, hat, 0.7, 0.9); add(tb, 0.04, hat, 0.3, 0.5); continue; }
         if (k === 0 || (p.beats === 4 && k === 2)) add(tb, 0.35, kick, 0.8, 0.8);
         if (p.beats === 3 && k > 0) chd.forEach(n => add(tb, 0.25, tone(hz(n + 12), 0.035, 9), 0.5, 0.7));
         add(tb + (p.vamp ? bd/2 : 0), 0.06, hat, 0.45, 0.75);
@@ -1144,7 +1232,7 @@ function makeDemo(){
   for (let i = 0; i < len; i++){ L[i] *= 0.9 / pk; R[i] *= 0.9 / pk; }
   track = {name:"Demo track", sr, ch:[L, R], len, dur:len / sr, demo:true};
   computePeaks(track);
-  const sections = plan.map(p => ({id:uid(), label:p.label, name:p.name, bars:p.bars, bpm:p.bpm, beats:p.beats, nudge:0, mute:false}));
+  const sections = plan.map(p => normMeter({id:uid(), label:p.label, name:p.name, bars:p.bars, bpm:p.bpm, num:p.beats, den:p.den, unit:p.den === 8 ? "8" : "4", groups:p.groups, nudge:0, mute:false}));
   S = {offset, sections, set:{...DEFAULT_SET}, arr: sections.map(s => ({id:uid(), kind:"sec", sec:s.id, repeat:s.name === "Vamp" ? 3 : 1, open:s.name === "Vamp", skipStart:0, skipEnd:0}))};
   S.arr[3].skipEnd = 4;  // example cut: last 4 bars of the waltz
   $("#trkName").textContent = "Demo track (example) · " + fmtT(track.dur);
@@ -1195,13 +1283,14 @@ function wav24(chs, sr){
 }
 function midiFile(r){
   const PPQ = 480, ev = []; let tick = 0, lastBpm = null, lastBeats = null;
-  const firstBpm = (r.find(c => c.bpm) || {bpm:120}).bpm;
+  const fc = r.find(c => c.bpm); const firstQ = fc ? 60 / (pulse(fc) * fc.den / 4) : 120;
   const txt = s => [...new TextEncoder().encode(s)];
   ev.push([0, [0xFF, 0x03, ...vl(txt("Click").length), ...txt("Click")]]);
   for (const c of r){
-    const bpm = c.bpm || lastBpm || firstBpm;
-    if (bpm !== lastBpm){ const us = Math.round(60e6 / bpm); ev.push([tick, [0xFF, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255]]); lastBpm = bpm; }
-    if (c.beats && c.beats !== lastBeats){ ev.push([tick, [0xFF, 0x58, 4, c.beats, 2, 24, 8]]); lastBeats = c.beats; }
+    // MIDI tempo is always quarter notes per minute
+    const bpm = c.bpm ? 60 / (pulse(c) * c.den / 4) : (lastBpm || firstQ);
+    if (Math.abs(bpm - (lastBpm || 0)) > 1e-6){ const us = Math.round(60e6 / bpm); ev.push([tick, [0xFF, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255]]); lastBpm = bpm; }
+    if (c.num && c.num + "/" + c.den !== lastBeats){ ev.push([tick, [0xFF, 0x58, 4, c.num, Math.log2(c.den), 24, 8]]); lastBeats = c.num + "/" + c.den; }
     if ((c.kind === "sec" || c.kind === "click") && (c.pass === 0 || c.passes > 1)){
       const m = txt(`${c.label} ${c.name || ""}${c.passes > 1 ? ` (${c.pass + 1}/${c.passes})` : ""}`.trim());
       ev.push([tick, [0xFF, 0x06, ...vl(m.length), ...m]]);
@@ -1273,7 +1362,7 @@ function runSheet(r){
   const lines = [`${track.name} — running order`, `Count-in: ${S.set.countIn} bar(s)`, ""];
   for (const c of r){
     if (c.kind !== "sec" && c.kind !== "click") continue;
-    lines.push(`${fmtT2(c.t).padStart(8)}  m.${String(c.bar).padStart(4)}–${c.bar + c.bars - 1}  [${c.label}] ${c.name || ""}  ${fmtBpm(c.bpm)} bpm ${c.beats}/bar${c.passes > 1 ? `  pass ${c.pass + 1}/${c.passes}` : ""}${c.open && c.pass === 0 ? "  (till ready live)" : ""}${c.kind === "click" ? "  (click only)" : ""}`);
+    lines.push(`${fmtT2(c.t).padStart(8)}  m.${String(c.bar).padStart(4)}–${c.bar + c.bars - 1}  [${c.label}] ${c.name || ""}  ${sigTxt(c)}  ${tempoTxt(c)}${c.passes > 1 ? `  pass ${c.pass + 1}/${c.passes}` : ""}${c.open && c.pass === 0 ? "  (till ready live)" : ""}${c.kind === "click" ? "  (click only)" : ""}`);
   }
   lines.push("", `Total ${fmtT2(r.total)}`);
   return lines.join("\n");
@@ -1287,7 +1376,7 @@ async function openProject(file){
     const o = JSON.parse(await file.text());
     if (!Array.isArray(o.sections) || !Array.isArray(o.arr)) throw new Error("bad");
     if (track && o.track && o.track !== track.name) toast(`Project was made for “${o.track}”. Applied anyway.`);
-    mut(() => { S.offset = +o.offset || 0; S.sections = o.sections; S.arr = o.arr; S.set = {...DEFAULT_SET, ...o.set}; });
+    mut(() => { S.offset = +o.offset || 0; S.sections = o.sections; S.arr = o.arr; S.set = {...DEFAULT_SET, ...o.set}; normAll(); });
   } catch(e){ toast("That isn't a Pit Click project file."); }
 }
 $("#projIn").addEventListener("change", e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ""; });
