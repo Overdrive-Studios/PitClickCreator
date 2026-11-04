@@ -14,7 +14,7 @@
 :root{
   --paper:#E8ECF0; --panel:#F7F8FA; --ink:#141C27; --muted:#566273; --line:#C6CED8;
   --amber:#B06C06; --amber-soft:rgba(176,108,6,.13); --vamp:#1C6884; --vamp-soft:rgba(28,104,132,.12);
-  --wave:#76849A; --band:rgba(20,28,39,.05); --danger:#A8281F; --on-ink:#F7F8FA;
+  --wave:#76849A; --band:rgba(20,28,39,.05); --danger:#A8281F; --on-ink:#F7F8FA; --grid:#000000;
   --f-mark:"Bodoni Moda", Didot, "Bodoni 72", Georgia, serif;
   --f-ui:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-num:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -22,11 +22,11 @@
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --paper:#0F141B; --panel:#161D26; --ink:#E4E9EF; --muted:#94A1B2; --line:#2A3441;
   --amber:#F0B040; --amber-soft:rgba(240,176,64,.14); --vamp:#62B4D2; --vamp-soft:rgba(98,180,210,.14);
-  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; color-scheme:dark } }
+  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; --grid:#FFFFFF; color-scheme:dark } }
 :root[data-theme="dark"]{
   --paper:#0F141B; --panel:#161D26; --ink:#E4E9EF; --muted:#94A1B2; --line:#2A3441;
   --amber:#F0B040; --amber-soft:rgba(240,176,64,.14); --vamp:#62B4D2; --vamp-soft:rgba(98,180,210,.14);
-  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; color-scheme:dark }
+  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; --grid:#FFFFFF; color-scheme:dark }
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -201,7 +201,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v15</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v16</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -884,7 +884,7 @@ function drawLane(){
   cv.width = Math.floor(W * dpr); cv.height = Math.floor(H * dpr); cv.style.width = W + "px"; cv.style.height = H + "px";
   $("#laneInner").style.width = W + "px";
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
-  const C = {ink:css("--ink"), muted:css("--muted"), line:css("--line"), wave:css("--wave"), band:css("--band"), amber:css("--amber"), amberS:css("--amber-soft"), vamp:css("--vamp"), vampS:css("--vamp-soft"), panel:css("--panel")};
+  const C = {ink:css("--ink"), muted:css("--muted"), line:css("--line"), wave:css("--wave"), band:css("--band"), amber:css("--amber"), amberS:css("--amber-soft"), vamp:css("--vamp"), vampS:css("--vamp-soft"), panel:css("--panel"), grid:css("--grid")};
   const top = 40, bot = H - 6, mid = (top + bot) / 2, half = (bot - top) / 2;
   // bands
   let alt = 0;
@@ -923,9 +923,9 @@ function drawLane(){
       const tb = c.t + from + tm.barT[b] - base; if (tb >= c.t + c.dur - 1e-6) break;
       const x = Math.round(tb * pps) + 0.5;
       const bc = tm.clicks[b].filter(z => z[1] !== "sub");
-      g.fillStyle = C.line; g.fillRect(x - 0.5, 24, 1, H - 24);
+      g.fillStyle = C.grid; g.fillRect(Math.round(tb * pps) - 1, 24, 2, H - 24);
       const bw = ((tm.barT[b + 1] - tm.barT[b]) / bc.length) * pps;
-      if (bw > 9){ for (let k = 1; k < bc.length; k++){ const xb = (tb + bc[k][0]) * pps; if (xb < (c.t + c.dur) * pps){ g.fillRect(Math.round(xb), bot - 6, 1, 6); if (bw > 22){ g.globalAlpha = 0.45; g.fillRect(Math.round(xb), top, 1, bot - top); g.globalAlpha = 1; } } } }
+      if (bw > 6){ for (let k = 1; k < bc.length; k++){ const xb = (tb + bc[k][0]) * pps; if (xb < (c.t + c.dur) * pps){ if (bw > 14) g.fillRect(Math.round(xb), top - 6, 1, bot - top + 6); else g.fillRect(Math.round(xb), bot - 10, 1, 10); } } }
       const n = c.kind === "lead" ? "c" + (b - b0 + 1) : String(c.bar + b - b0);
       if (x - lastLbl > 26 && c.kind !== "lead" || (c.kind === "lead" && x - lastLbl > 18)){ g.fillStyle = C.muted; g.fillText(n, x + 3, 26); lastLbl = x; }
     }
