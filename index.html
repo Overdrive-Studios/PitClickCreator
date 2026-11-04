@@ -161,7 +161,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v7</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v8</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -282,7 +282,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
         <button class="btn" id="saveProj">Save project</button>
         <label class="btn file">Open project…<input type="file" id="projIn" accept=".json,application/json"></label>
       </div>
-      <p class="note" id="exNote">Your tempo map is kept in this browser per track name, so reloading the same track brings it back.</p>
+      <p class="note" id="exNote">Your work saves automatically in this browser, track included, so a refresh picks up where you left off. Use Save project to move it to another computer.</p>
     </section>
   </div>
 </div>
@@ -427,7 +427,26 @@ function undo(){
   const o = JSON.parse(hist.pop()); Object.assign(S, o); normAll(); saveLocal(); stopIfPlaying(); renderAll(); toast("Undone");
 }
 function storeKey(){ return track ? "pitclick:" + track.name + ":" + Math.round(track.dur) : null; }
-function saveLocal(){ clearTimeout(saveLocal.h); saveLocal.h = setTimeout(() => { try { const k = storeKey(); if (k && !track.demo) localStorage.setItem(k, snapshot()); } catch(e){} }, 300); }
+function saveNow(){
+  clearTimeout(saveLocal.h);
+  if (!track || !S) return;
+  try {
+    const k = storeKey(); if (k && !track.demo) localStorage.setItem(k, snapshot());
+    localStorage.setItem("pitclick:session", JSON.stringify({demo:!!track.demo, name:track.name, dur:track.dur, project:JSON.parse(snapshot()), view, playhead, zoom, selSec, scroll:$("#lane").scrollLeft}));
+  } catch(e){}
+}
+function saveLocal(){ clearTimeout(saveLocal.h); saveLocal.h = setTimeout(saveNow, 300); }
+window.addEventListener("pagehide", saveNow);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveNow(); });
+// the track audio itself is kept in this browser's IndexedDB so a refresh can reopen it
+function idb(){
+  return idb.p || (idb.p = new Promise((res, rej) => {
+    try { const r = indexedDB.open("pitclick", 1); r.onupgradeneeded = () => r.result.createObjectStore("kv"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }
+    catch(e){ rej(e); }
+  }));
+}
+async function idbPut(k, v){ const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); }
+async function idbGet(k){ const db = await idb(); return new Promise((res, rej) => { const q = db.transaction("kv").objectStore("kv").get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); }
 function loadLocal(){ try { const k = storeKey(); const v = k && localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch(e){ return null; } }
 
 const secById = id => S.sections.find(s => s.id === id);
@@ -538,7 +557,7 @@ function ac(){
   return actx;
 }
 function applyMix(){
-  if (!actx) return;
+  if (!actx || !S) return;
   trackBus.gain.value = S.set.trackVol; clickBus.gain.value = S.set.clickVol;
   trackPan.pan.value = S.set.split ? 1 : 0; clickPan.pan.value = S.set.split ? -1 : 0;
 }
@@ -669,7 +688,7 @@ function track_(n){ const set = P.nodes; set.add(n); n.onended = () => set.delet
 function stop(){
   clearInterval(pumpTimer); cancelAnimationFrame(rafId);
   if (!P) return;
-  const p = P; P = null;
+  const p = P; P = null; saveLocal();
   try { const t = actx.currentTime; p.tOut.gain.setValueAtTime(p.tOut.gain.value, t); p.tOut.gain.linearRampToValueAtTime(0, t + 0.01); p.cOut.gain.setValueAtTime(0, t); } catch(e){}
   for (const n of p.nodes){ try { n.stop(); } catch(e){} }
   setTimeout(() => { try { p.tOut.disconnect(); p.cOut.disconnect(); } catch(e){} }, 30);
@@ -705,6 +724,7 @@ function goPress(){
 
 /* ---------------- readout & lane ---------------- */
 function updateReadout(lp){
+  if (!S) return;
   const r = tl();
   const c = lp && lp.ch ? lp.ch : chunkAt(playhead);
   let within = lp ? lp.within : (c ? playhead - c.t : 0);
@@ -750,6 +770,7 @@ function follow(){
 }
 function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 function drawLane(){
+  if (!S) return;
   const r = tl(); const lane = $("#lane"), cv = $("#cv");
   const vw = Math.max(200, lane.clientWidth); const total = Math.max(r.total, 1);
   const W = Math.min(Math.round(vw * zoom), 30000), H = 178;
@@ -857,7 +878,7 @@ function endDrag(e){
   const was = drag.was; drag = null;
   $("#laneInner").classList.remove("dragging");
   if (view === "map"){ const c = chunkAt(playhead); if (c && c.sid && c.sid !== selSec){ selSec = c.sid; renderMap(); drawLane(); } }
-  if (was) play();
+  if (was) play(); else saveLocal();
 }
 $("#laneInner").addEventListener("pointerup", endDrag);
 $("#laneInner").addEventListener("pointercancel", endDrag);
@@ -1093,7 +1114,7 @@ function setView(v){
   else { const r = tl(); const c = r.find(c => c.src != null && srcT >= c.src && srcT < c.src + c.dur); playhead = c ? c.t + (srcT - c.src) : 0; }
   $("#vMap").setAttribute("aria-pressed", v === "map"); $("#vShow").setAttribute("aria-pressed", v === "show");
   $("#laneLbl").textContent = v === "map" ? "Tempo map · original track" : "Show running order";
-  drawLane(); updateReadout(); follow();
+  drawLane(); updateReadout(); follow(); saveLocal();
 }
 $("#vMap").onclick = () => setView("map");
 $("#vShow").onclick = () => setView("show");
@@ -1112,7 +1133,7 @@ function setZoom(z, anchorX){
   const lane = $("#lane"); z = clamp(z, 1, ZMAX());
   if (anchorX == null) anchorX = clamp(playhead * pps - lane.scrollLeft, 0, lane.clientWidth) || lane.clientWidth / 2;
   const t = (lane.scrollLeft + anchorX) / pps;
-  zoom = z; drawLane();
+  zoom = z; drawLane(); saveLocal();
   lane.scrollLeft = Math.max(0, t * pps - anchorX);
   const zi = $("#zoom"); zi.max = Math.max(24, Math.ceil(ZMAX())); zi.value = z;
 }
@@ -1290,23 +1311,29 @@ function computePeaks(tr){
   const g = pk > 0 ? 0.95 / pk : 1; for (let b = 0; b < n; b++){ mx[b] *= g; mn[b] *= g; }
   tr.peaks = {max:mx, min:mn, rate:R};
 }
+async function decodeTrack(ab, fileName){
+  const buf = await new Promise((res, rej) => ac().decodeAudioData(ab, res, rej));
+  const ch = []; for (let i = 0; i < Math.min(2, buf.numberOfChannels); i++) ch.push(buf.getChannelData(i));
+  track = {name:fileName.replace(/\.[^.]+$/, ""), sr:buf.sampleRate, ch, len:buf.length, dur:buf.duration, buf};
+  computePeaks(track);
+  $("#trkName").textContent = track.name + " · " + fmtT(track.dur);
+}
 async function loadFile(file){
   if (!file) return;
+  if (locked) return toast("The show is locked. Press Unlock to load another track.");
   stopIfPlaying();
   await busy("Decoding " + file.name + "…");
   try {
     const ab = await file.arrayBuffer();
-    const buf = await new Promise((res, rej) => ac().decodeAudioData(ab, res, rej));
-    const ch = []; for (let i = 0; i < Math.min(2, buf.numberOfChannels); i++) ch.push(buf.getChannelData(i));
-    track = {name:file.name.replace(/\.[^.]+$/, ""), sr:buf.sampleRate, ch, len:buf.length, dur:buf.duration, buf};
-    computePeaks(track);
-    $("#trkName").textContent = track.name + " · " + fmtT(track.dur);
+    idbPut("lastFile", {name:file.name, data:ab.slice(0)}).catch(() => toast("This browser couldn't keep a copy of the track, so after a refresh you'll need to load it again. Your tempo map is still saved."));
+    await decodeTrack(ab, file.name);
     hist.length = 0; taps = []; renderTaps(); playhead = 0;
     const saved = loadLocal();
     S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}};
     busy("");
     if (saved){ Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; normAll(); selSec = S.sections[0] && S.sections[0].id; setViewSilent("map"); renderAll(); toast("Restored your tempo map for this track."); }
     else { setViewSilent("map"); renderAll(); await detectAll(); hist.length = 0; renderAll(); }
+    saveNow();
   } catch(err){
     busy(""); toast("Couldn't read that file. Try WAV, MP3, M4A or FLAC.");
   }
@@ -1371,7 +1398,7 @@ function makeDemo(){
   S = {offset, sections, set:{...DEFAULT_SET}, arr: sections.map(s => ({id:uid(), kind:"sec", sec:s.id, repeat:s.name === "Vamp" ? 3 : 1, open:s.name === "Vamp", skipStart:0, skipEnd:0}))};
   $("#trkName").textContent = "Demo track (example) · " + fmtT(track.dur);
 }
-$("#demoBtn").onclick = () => { stopIfPlaying(); makeDemo(); hist.length = 0; playhead = 0; selSec = null; setViewSilent("show"); renderAll(); toast("Demo loaded: the vamp waits for GO, the waltz and tag have rits, and there's a hold before the tag."); };
+$("#demoBtn").onclick = () => { stopIfPlaying(); makeDemo(); setTimeout(saveNow, 0); hist.length = 0; playhead = 0; selSec = null; setViewSilent("show"); renderAll(); toast("Demo loaded: the vamp waits for GO, the waltz and tag have rits, and there's a hold before the tag."); };
 
 /* ---------------- export ---------------- */
 let dlP = null;
@@ -1530,7 +1557,33 @@ async function openProject(file){
 $("#projIn").addEventListener("change", e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ""; });
 
 /* ---------------- boot ---------------- */
-makeDemo(); renderAll(); renderTaps();
+async function boot(){
+  let ses = null; try { ses = JSON.parse(localStorage.getItem("pitclick:session") || "null"); } catch(e){}
+  const apply = () => {
+    const pr = ses.project || {};
+    if (Array.isArray(pr.sections)){ S.offset = +pr.offset || 0; S.sections = pr.sections; S.arr = pr.arr || []; S.set = {...DEFAULT_SET, ...pr.set}; normAll(); }
+    selSec = ses.selSec || null; setViewSilent(ses.view === "map" ? "map" : "show");
+    zoom = clamp(+ses.zoom || 1, 1, 200); $("#zoom").max = Math.max(24, Math.ceil(zoom)); $("#zoom").value = zoom;
+    renderAll(); playhead = clamp(+ses.playhead || 0, 0, tl().total); updateReadout();
+    if (ses.scroll) $("#lane").scrollLeft = ses.scroll;
+  };
+  if (ses && !ses.demo){
+    await busy("Reopening " + ses.name + "…");
+    let ok = false;
+    try {
+      const f = await idbGet("lastFile");
+      if (f && f.data && f.name.replace(/\.[^.]+$/, "") === ses.name){ await decodeTrack(f.data, f.name); ok = Math.abs(track.dur - ses.dur) < 0.5; }
+    } catch(e){ ok = false; }
+    busy("");
+    if (ok){ S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}}; apply(); toast("Picked up where you left off."); return; }
+    makeDemo(); renderAll();
+    toast(`Load “${ses.name}” again to carry on. Your tempo map and running order will come back with it.`);
+    return;
+  }
+  makeDemo();
+  if (ses && ses.demo) apply(); else renderAll();
+}
+boot().then(() => renderTaps());
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawLane);
 </script>
 
