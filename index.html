@@ -161,7 +161,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v6</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v7</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -173,7 +173,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
     <div class="tbtns">
       <button class="btn" id="homeBtn" title="Back to start (Home)" aria-label="Back to start">⏮</button>
       <button class="btn primary" id="playBtn" title="Play / pause (Space)" aria-label="Play">▶</button>
-      <button class="btn" id="stopBtn" title="Stop" aria-label="Stop">■</button>
+      <button class="btn" id="stopBtn" title="Stop where you are (⏮ goes back to the start)" aria-label="Stop">■</button>
       <button class="btn go" id="goBtn" title="Go — leave the vamp at the end of this pass (G)">GO</button>
     </div>
     <div class="readout">
@@ -194,8 +194,8 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
   <section class="lanebox">
     <div class="lanehead">
       <span class="lbl" id="laneLbl">Show running order</span>
-      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split at playhead</span><span>Drag along the lane to move the playhead</span></span>
-      <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="1" max="24" step="0.5" value="1" style="width:140px"></label>
+      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split at playhead</span><span>Drag to move the playhead · pinch to zoom · two-finger swipe to scroll</span></span>
+      <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="1" max="24" step="0.1" value="1" style="width:140px"></label>
     </div>
     <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
   </section>
@@ -1100,12 +1100,39 @@ $("#vShow").onclick = () => setView("show");
 
 /* transport */
 $("#playBtn").onclick = () => P ? stop() : play();
-$("#stopBtn").onclick = () => { stop(); playhead = 0; updateReadout(); $("#lane").scrollLeft = 0; };
+$("#stopBtn").onclick = () => { stop(); updateReadout(); };
 $("#homeBtn").onclick = () => { const was = !!P; stop(); playhead = 0; updateReadout(); $("#lane").scrollLeft = 0; if (was) play(); };
 $("#goBtn").onclick = goPress;
 $("#undoBtn").onclick = undo;
 $("#lockBtn").onclick = () => { locked = !locked; try { localStorage.setItem("pitclick:locked", locked ? "1" : "0"); } catch(e){} renderAll(); toast(locked ? "Show locked" : "Unlocked. You can edit again."); };
-$("#zoom").addEventListener("input", e => { zoom = +e.target.value; drawLane(); follow(); });
+$("#zoom").addEventListener("input", e => setZoom(+e.target.value));
+// zoom keeping the point at screen x (relative to the lane) fixed; pinch and ctrl+wheel use this
+const ZMAX = () => Math.max(1, Math.min(200, 30000 / Math.max(200, $("#lane").clientWidth)));
+function setZoom(z, anchorX){
+  const lane = $("#lane"); z = clamp(z, 1, ZMAX());
+  if (anchorX == null) anchorX = clamp(playhead * pps - lane.scrollLeft, 0, lane.clientWidth) || lane.clientWidth / 2;
+  const t = (lane.scrollLeft + anchorX) / pps;
+  zoom = z; drawLane();
+  lane.scrollLeft = Math.max(0, t * pps - anchorX);
+  const zi = $("#zoom"); zi.max = Math.max(24, Math.ceil(ZMAX())); zi.value = z;
+}
+let zPend = null;
+function queueZoom(factor, x){
+  if (!zPend){ zPend = {f:1, x}; requestAnimationFrame(() => { const p = zPend; zPend = null; setZoom(zoom * p.f, p.x); }); }
+  zPend.f *= factor; zPend.x = x;
+}
+const laneX = e => e.clientX - $("#lane").getBoundingClientRect().left;
+// trackpad pinch arrives as ctrl+wheel in Chrome, Edge and Firefox (also a mouse wheel with Ctrl held)
+$("#lane").addEventListener("wheel", e => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  queueZoom(Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.01)), laneX(e));
+}, {passive:false});
+// Safari pinch
+let gz = null;
+$("#lane").addEventListener("gesturestart", e => { e.preventDefault(); gz = {z:zoom, x:laneX(e)}; });
+$("#lane").addEventListener("gesturechange", e => { if (!gz) return; e.preventDefault(); const f = gz.z * e.scale / zoom; queueZoom(f, gz.x); });
+$("#lane").addEventListener("gestureend", e => { gz = null; });
 window.addEventListener("resize", () => { clearTimeout(drawLane.h); drawLane.h = setTimeout(drawLane, 120); });
 
 /* taps */
