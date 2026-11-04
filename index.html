@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,700;6..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: a pit console — transport strip on top, a full-width score lane (waveform + bar grid + rehearsal marks), then tempo map and show running order side by side, mix/export below */
+/* Layout: transport strip, three step tabs, a full-width score lane, then per step a list with a details panel beside it */
 :root{
   --paper:#E8ECF0; --panel:#F7F8FA; --ink:#141C27; --muted:#566273; --line:#C6CED8;
   --amber:#B06C06; --amber-soft:rgba(176,108,6,.13); --vamp:#1C6884; --vamp-soft:rgba(28,104,132,.12);
@@ -99,67 +99,85 @@ label.file.disabled{opacity:.45;pointer-events:none}
 .ph::after{content:"";position:absolute;top:0;bottom:0;left:-9px;width:20px}
 .laneinner.dragging .ph{cursor:grabbing}
 
-/* panels */
-.grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:14px;align-items:start}
-@media (max-width:980px){.grid{grid-template-columns:minmax(0,1fr)}}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;min-width:0}
-.panel>h2{font:700 19px/1.2 var(--f-mark);margin:0;padding:12px 14px 4px}
-.panel>.sub{padding:0 14px 10px;color:var(--muted);font-size:12.5px;max-width:70ch}
-.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--line)}
-.bar .grow{flex:1}
-.nudge{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
-input[type=number],input[type=text]{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:4px 6px;min-width:0}
-input[type=number]{font-family:var(--f-num);font-variant-numeric:tabular-nums;width:4.6em}
-input.w6{width:6.2em}
-select{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:4px 6px}
+/* steps */
+.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.step{display:flex;gap:10px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 14px;cursor:pointer;min-width:0}
+.step .n{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--muted);font:600 13px var(--f-num);color:var(--muted)}
+.step b{display:block;font-size:15px}
+.step small{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step[aria-selected="true"]{border-color:var(--ink);box-shadow:inset 0 -3px 0 var(--amber)}
+.step[aria-selected="true"] .n{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
+@media (max-width:700px){.step small{display:none}.step{padding:8px 10px}}
 
-.scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:1160px}
-th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:500;text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:middle;white-space:nowrap}
-tr.sel td{background:var(--amber-soft)}
-tr[data-sid]{cursor:pointer}
-td input.lab{width:3em;font:800 14px var(--f-mark);text-align:center}
-td input.nm{width:9em}
-.where{font-size:12px;color:var(--muted)}
-.stick{position:sticky;left:0;z-index:2;background:var(--panel);box-shadow:1px 0 0 var(--line)}
-tr.sel td.stick{background:color-mix(in srgb,var(--amber) 13%,var(--panel))}
-.gripcell{display:inline-flex;align-items:center;gap:8px}
-.grip{cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding:4px 2px;border-radius:4px;touch-action:none;user-select:none}
+/* workspace: list on the left, details on the right */
+.pane{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;align-items:start}
+@media (max-width:960px){.pane{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tools .grow{flex:1}
+.tools .inline{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
+.hint{margin:0;padding:8px 14px;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line)}
+.list{display:flex;flex-direction:column}
+.row{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 12px 9px 8px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--band)}
+.row.sel{background:var(--amber-soft)}
+.row.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)}
+.row.now .mark{background:var(--amber);border-color:var(--amber);color:var(--on-ink)}
+.row .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .nm.muted{font-weight:500}
+.row .meta{font:12px var(--f-num);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .tags{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.row.lifting{opacity:.4}
+.row.drop-before{box-shadow:inset 0 3px 0 var(--amber)}
+.row.drop-after{box-shadow:inset 0 -3px 0 var(--amber)}
+.empty{padding:22px 14px;color:var(--muted)}
+.grip{cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding:6px 3px;border-radius:4px;touch-action:none;user-select:none}
 .grip:hover{color:var(--ink);background:var(--band)}
-tr.lifting td{opacity:.45}
-tr.drop-before td{box-shadow:inset 0 3px 0 var(--amber)}
-tr.drop-after td{box-shadow:inset 0 -3px 0 var(--amber)}
 body.rowdrag, body.rowdrag *{cursor:grabbing!important}
-.tcell{display:inline-flex;align-items:center;gap:4px}
-td select{max-width:11em}
-.acts{display:flex;gap:4px}
-
-.ents{display:flex;flex-direction:column}
-.ent{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:center;padding:9px 14px;border-top:1px solid var(--line)}
-.ent .info{min-width:0}
-.ent .info .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ent .info small{display:block;font-family:var(--f-num);font-size:11.5px}
-.ent .ctl{grid-column:2 / 4;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--muted)}
-.ent .ctl label{display:flex;align-items:center;gap:5px}
-.ent.isvamp{background:linear-gradient(90deg,var(--vamp-soft),transparent 60%)}
-.ent.now{box-shadow:inset 3px 0 0 var(--amber)}
-.badge{font:600 11px/1 var(--f-num);padding:3px 6px;border-radius:4px;background:var(--vamp-soft);color:var(--vamp);margin-left:6px}
+.badge{font:600 11px/1 var(--f-num);padding:4px 6px;border-radius:4px;background:var(--vamp-soft);color:var(--vamp);white-space:nowrap}
 .badge.click{background:var(--amber-soft);color:var(--amber)}
+.badge.dim{background:var(--band);color:var(--muted)}
 
-.taps{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.tapbtn{min-width:90px}
+/* details panel */
+.insp{position:sticky;top:12px}
+.insp-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.insp-head input{flex:1;font-weight:600;font-size:15px}
+.insp-head .lab{width:3.4em;font:800 15px var(--f-mark);text-align:center;flex:none}
+.group{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+.group:last-child{border-bottom:0}
+.group h3{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.f{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.f > span:first-child{min-width:92px;color:var(--muted);font-size:13px}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+.insp .note{padding:0;font-size:12px}
+.insp-empty{padding:28px 16px;color:var(--muted);text-align:center}
+
+input[type=number],input[type=text]{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:5px 7px;min-width:0}
+input[type=number]{font-family:var(--f-num);font-variant-numeric:tabular-nums;width:5em}
+input.w6{width:6.4em}
+select{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:5px 6px}
+
+.taps{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .tapbtn.hit{background:var(--amber-soft)}
+.tapinfo{font:12.5px var(--f-num);color:var(--muted)}
 
-.mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 18px;padding:6px 14px 14px}
-.mix label{display:flex;flex-direction:column;gap:4px}
+/* step 3 */
+.out{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+@media (max-width:860px){.out{grid-template-columns:minmax(0,1fr)}}
+.card > h2{font:700 19px/1.2 var(--f-mark);margin:0;padding:14px 14px 4px}
+.card > .sub{margin:0;padding:0 14px 10px;color:var(--muted);font-size:12.5px}
+.mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px 18px;padding:8px 14px 16px}
+.mix label{display:flex;flex-direction:column;gap:5px}
 .mix .inline{flex-direction:row;align-items:center;gap:8px}
 input[type=range]{width:100%;accent-color:var(--amber)}
-.checks{display:flex;flex-direction:column;gap:6px;padding:4px 14px 10px}
+.checks{display:flex;flex-direction:column;gap:8px;padding:6px 14px 12px}
 .checks label{display:flex;gap:8px;align-items:baseline}
-.note{font-size:12.5px;color:var(--muted);padding:0 14px 12px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 14px;border-top:1px solid var(--line)}
+.note{font-size:12.5px;color:var(--muted);padding:0 14px 14px;margin:0}
 .keys{font-size:12px;color:var(--muted);display:flex;gap:6px 14px;flex-wrap:wrap}
 kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:var(--panel)}
+body.locked .pane .card{opacity:.75}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:9px 14px;border-radius:8px;font-size:13px;max-width:min(560px,calc(100vw - 32px));z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.2)}
 .drop{position:fixed;inset:0;background:var(--amber-soft);border:3px dashed var(--amber);z-index:30;display:grid;place-items:center;font:700 24px var(--f-mark);pointer-events:none}
 .busy{position:fixed;inset:0;background:color-mix(in srgb,var(--paper) 70%,transparent);display:grid;place-items:center;z-index:25;font-weight:600}
@@ -170,7 +188,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v11</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v12</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -192,83 +210,67 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
       <div class="ro"><span class="lbl">Time</span><b id="roTime" style="font-size:18px">0:00.0</b></div>
       <div class="ro"><span class="lbl">&nbsp;</span><span class="status" id="roStatus"></span></div>
     </div>
-    <div class="views">
-      <div class="seg" role="group" aria-label="View">
-        <button id="vMap" aria-pressed="false">Tempo map</button>
-        <button id="vShow" aria-pressed="true">Show</button>
-      </div>
-    </div>
   </section>
+
+  <nav class="steps" role="tablist" aria-label="Steps">
+    <button class="step" role="tab" id="tabMap" data-tab="map" aria-selected="false"><span class="n">1</span><span><b>Map the track</b><small>Bar 1, tempos and time signatures</small></span></button>
+    <button class="step" role="tab" id="tabShow" data-tab="show" aria-selected="true"><span class="n">2</span><span><b>Build the show</b><small>Order, repeats, vamps and cuts</small></span></button>
+    <button class="step" role="tab" id="tabOut" data-tab="out" aria-selected="false"><span class="n">3</span><span><b>Click &amp; export</b><small>Sound, levels and files</small></span></button>
+  </nav>
 
   <section class="lanebox">
     <div class="lanehead">
       <span class="lbl" id="laneLbl">Show running order</span>
-      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split at playhead</span><span>Drag to move the playhead · in Tempo map, drag a section's start line to move it · pinch to zoom</span></span>
+      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · pinch to zoom</span></span>
       <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="1" max="24" step="0.1" value="1" style="width:140px"></label>
     </div>
     <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
   </section>
 
-  <div class="grid">
-    <section class="panel lockable" id="mapPanel">
-      <h2>Tempo map</h2>
-      <p class="sub">How the track was recorded. Get bar 1 and each tempo or meter change lined up here. Type any time signature (6/8, 7/8, 5/4…), and pick which note the BPM counts, like ♩. = 60 for a 6/8. For a rit. or accel., set the tempo it ends on and over how many bars. For a fermata or hold, use “Start at ▼” on the next section at its real entry; the gap plays with no click. Split off any vamp or cuttable bars into their own section.</p>
-      <div class="bar">
-        <span class="lbl">Bar 1 at</span>
-        <span class="nudge">
-          <input type="number" id="offIn" class="w6" step="0.001" min="0"><small>s</small>
-          <button class="btn sm" data-off="-beat">−1 beat</button>
-          <button class="btn sm" data-off="-0.01">−10 ms</button>
-          <button class="btn sm" data-off="0.01">+10 ms</button>
-          <button class="btn sm" data-off="beat">+1 beat</button>
-          <button class="btn sm" data-off="ph">At playhead</button>
-        </span>
-      </div>
-      <div class="bar">
+  <section class="pane" id="paneMap" role="tabpanel" aria-labelledby="tabMap" hidden>
+    <div class="card">
+      <div class="tools">
         <button class="btn" id="detectAll">Auto-detect tempo</button>
-        <button class="btn" id="splitBtn">Split at playhead</button>
+        <button class="btn" id="splitBtn" title="Split the section under the playhead (S)">Split at playhead</button>
         <button class="btn" id="addSec">Add section</button>
-        <label class="inline" style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="autoLabel"> Letters follow order</label>
+        <span class="taps">
+          <button class="btn tapbtn" id="tapBtn" title="Tap along while it plays (T)">Tap</button>
+          <span class="tapinfo" id="tapInfo">No taps</span>
+          <button class="btn sm" id="tapApply" disabled hidden>Use this tempo</button>
+          <button class="btn sm" id="tapStart" disabled hidden>Start here</button>
+          <button class="btn sm" id="tapClear" disabled hidden>Clear</button>
+        </span>
         <span class="grow"></span>
+        <label class="inline"><input type="checkbox" id="autoLabel"> Letters follow order</label>
       </div>
-      <div class="bar">
-        <div class="taps">
-          <button class="btn tapbtn" id="tapBtn">Tap (T)</button>
-          <span class="num" id="tapInfo">No taps</span>
-          <button class="btn sm" id="tapApply" disabled>Use BPM on selected</button>
-          <button class="btn sm" id="tapStart" disabled>Selected starts at 1st tap</button>
-          <button class="btn sm" id="tapClear" disabled>Clear</button>
-        </div>
-      </div>
-      <div class="scroll">
-        <table>
-          <thead><tr><th class="stick">Mark</th><th>Name</th><th>Bars</th><th>Time sig</th><th>Tempo</th><th>Rit. / accel.</th><th>Click plays</th><th>Nudge ms</th><th>Click</th><th>Where</th><th></th></tr></thead>
-          <tbody id="mapBody"></tbody>
-        </table>
-      </div>
-    </section>
+      <p class="hint">How the track was recorded. Pick a section to edit it, drag ⠿ to reorder, or drag a section's start line on the waveform.</p>
+      <div class="list" id="mapBody"></div>
+    </div>
+    <aside class="card insp" id="mapInsp" aria-label="Section details"></aside>
+  </section>
 
-    <section class="panel lockable" id="showPanel">
-      <h2>Show running order</h2>
-      <p class="sub">What you'll actually play. Repeat or cut bars, reorder sections, or make a vamp wait for GO. Track audio is edited to match the click.</p>
-      <div class="ents" id="ents"></div>
-      <div class="bar">
+  <section class="pane" id="paneShow" role="tabpanel" aria-labelledby="tabShow">
+    <div class="card">
+      <div class="tools">
         <select id="addSel" aria-label="Section to add"></select>
-        <button class="btn sm" id="addEnt">Add section</button>
-        <button class="btn sm" id="addIntro">Click bars at start</button>
-        <button class="btn sm" id="addClick">Click bars at end</button>
+        <button class="btn" id="addEnt">Add</button>
+        <button class="btn" id="addIntro">Intro click</button>
+        <button class="btn" id="addClick">Click bars at end</button>
         <span class="grow"></span>
-        <button class="btn sm" id="resetArr">Reset to tempo map</button>
+        <button class="btn" id="resetArr" title="Rebuild the running order from the tempo map">Reset</button>
       </div>
-    </section>
-  </div>
+      <p class="hint">What you'll actually play, top to bottom. Pick a row to set repeats, vamps and cuts; drag ⠿ to reorder.</p>
+      <div class="list" id="ents"></div>
+    </div>
+    <aside class="card insp" id="showInsp" aria-label="Running order details"></aside>
+  </section>
 
-  <div class="grid">
-    <section class="panel">
+  <section class="out" id="paneOut" role="tabpanel" aria-labelledby="tabOut" hidden>
+    <div class="card">
       <h2>Click &amp; mix</h2>
       <div class="mix">
         <label><span class="lbl">Count-in</span>
-          <span style="display:flex;align-items:center;gap:6px"><input type="number" id="setCount" min="0" max="16" step="1" style="width:4em"> <small>bars, at the first section's tempo</small></span></label>
+          <span style="display:flex;align-items:center;gap:6px"><input type="number" id="setCount" min="0" max="16" step="1" style="width:4em"> <small>bars</small></span></label>
         <label><span class="lbl">Sound</span>
           <select id="setSound"><option value="beep">Beep</option><option value="wood">Woodblock</option><option value="low">Low click</option></select></label>
         <label><span class="lbl">Subdivision</span>
@@ -278,8 +280,8 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
         <label><span class="lbl">Track level</span><input type="range" id="setTrackVol" min="0" max="1" step="0.01"></label>
         <label class="inline"><input type="checkbox" id="setSplit"> Click left / track right</label>
       </div>
-    </section>
-    <section class="panel">
+    </div>
+    <div class="card">
       <h2>Export</h2>
       <p class="sub">Renders the show running order. Open-ended vamps use their “Plays” count. Files come in one .zip.</p>
       <div class="checks">
@@ -293,9 +295,9 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
         <button class="btn" id="saveProj">Save project</button>
         <label class="btn file">Open project…<input type="file" id="projIn" accept=".json,application/json"></label>
       </div>
-      <p class="note" id="exNote">Your work saves automatically in this browser, track included, so a refresh picks up where you left off. Use Save project to move it to another computer.</p>
-    </section>
-  </div>
+      <p class="note" id="exNote">Your work saves automatically in this browser, track included. Use Save project to move it to another computer.</p>
+    </div>
+  </section>
 </div>
 <datalist id="sigList"><option value="4/4"><option value="3/4"><option value="2/4"><option value="2/2"><option value="5/4"><option value="6/8"><option value="7/8"><option value="5/8"><option value="9/8"><option value="12/8"><option value="3/8"><option value="7/4"></datalist>
 <div class="toast" id="toast" hidden></div>
@@ -311,6 +313,12 @@ const UNITS = {"16":0.25, "8":0.5, "8.":0.75, "4":1, "4.":1.5, "2":2, "2.":3};
 const USYM = {"16":"16th", "8":"♪", "8.":"♪.", "4":"♩", "4.":"♩.", "2":"half", "2.":"dotted half"};
 const UNAME = {"16":"16th", "8":"♪ 8th", "8.":"♪. dotted 8th", "4":"♩ quarter", "4.":"♩. dotted quarter", "2":"half", "2.":"dotted half"};
 const DSYM = {1:"whole", 2:"half", 4:"♩", 8:"♪", 16:"16th"};
+// tempo as two tidy rows for the details panel
+function tempoRows(o, extra){
+  const opts = Object.keys(UNITS).map(u => `<option value="${u}" ${u === o.unit ? "selected" : ""}>${UNAME[u]}</option>`).join("");
+  return `<div class="f"><span>BPM</span><input type="number" data-f="bpm" value="${fmtBpm(o.bpm)}" min="10" max="600" step="0.01" class="w6" aria-label="BPM">${extra || ""}</div>
+    <div class="f"><span>Beat note</span><select data-f="unit" aria-label="Note the BPM counts">${opts}</select></div>`;
+}
 function meterCells(o, tag){
   const unitOpts = Object.keys(UNITS).map(u => `<option value="${u}" ${u === o.unit ? "selected" : ""}>${UNAME[u]}</option>`).join("");
   const grouped = !simple(o);
@@ -423,7 +431,7 @@ let locked = false; try { locked = localStorage.getItem("pitclick:locked") === "
 function applyLock(){
   document.body.classList.toggle("locked", locked);
   const b = $("#lockBtn"); b.setAttribute("aria-pressed", locked); b.textContent = locked ? "Unlock" : "Lock";
-  const sel = "#mapPanel input, #mapPanel button, #mapPanel select, #showPanel input, #showPanel button, #showPanel select, #setCount, #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
+  const sel = "#paneMap input, #paneMap button, #paneMap select, #paneShow input, #paneShow button, #paneShow select, #setCount, #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
   document.querySelectorAll(sel).forEach(el => { if (locked) el.disabled = true; else if (el.dataset.lk !== "1") el.disabled = false; });
   document.querySelectorAll("label.file").forEach(l => l.classList.toggle("disabled", locked));
   $("#tapBtn").disabled = false;
@@ -445,7 +453,7 @@ function saveNow(){
   if (!track || !S) return;
   try {
     const k = storeKey(); if (k && !track.demo) localStorage.setItem(k, snapshot());
-    localStorage.setItem("pitclick:session", JSON.stringify({demo:!!track.demo, name:track.name, dur:track.dur, project:JSON.parse(snapshot()), view, playhead, zoom, selSec, scroll:$("#lane").scrollLeft}));
+    localStorage.setItem("pitclick:session", JSON.stringify({demo:!!track.demo, name:track.name, dur:track.dur, project:JSON.parse(snapshot()), view, tab, playhead, zoom, selSec, selEnt, scroll:$("#lane").scrollLeft}));
   } catch(e){}
 }
 function saveLocal(){ clearTimeout(saveLocal.h); saveLocal.h = setTimeout(saveNow, 300); }
@@ -781,8 +789,8 @@ let lastNowEnt = undefined;
 function markNow(ch){
   const ei = ch && view === "show" && ch.ent != null ? ch.ent : null;
   if (ei === lastNowEnt) return; lastNowEnt = ei;
-  document.querySelectorAll(".ent.now").forEach(e => e.classList.remove("now"));
-  if (ei != null){ const el = document.querySelector(`.ent[data-i="${ei}"]`); if (el) el.classList.add("now"); }
+  document.querySelectorAll("#ents .row.now").forEach(e => e.classList.remove("now"));
+  if (ei != null){ const el = document.querySelector(`#ents .row[data-i="${ei}"]`); if (el) el.classList.add("now"); }
 }
 function esc(s){ return String(s ?? "").replace(/[&<>"]/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
 
@@ -939,7 +947,7 @@ function renderAll(){
   invalidate(); renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout();
   // remember which controls are disabled for their own reasons, so unlocking doesn't enable them
   // rows are rebuilt each render: remember which of their controls are disabled for their own reasons
-  document.querySelectorAll("#mapBody [disabled], #ents [disabled]").forEach(el => el.dataset.lk = "1");
+  document.querySelectorAll("#mapInsp [disabled], #showInsp [disabled]").forEach(el => el.dataset.lk = "1");
   applyLock();
 }
 function focusKey(){ const a = document.activeElement; if (!a || !a.dataset || !a.dataset.f) return null; const row = a.closest("[data-sid],[data-i]"); return row ? {row: row.dataset.sid ? `[data-sid="${row.dataset.sid}"]` : `[data-i="${row.dataset.i}"]`, f:a.dataset.f} : null; }
@@ -948,45 +956,71 @@ function refocus(k){ if (!k) return; const el = document.querySelector(`${k.row}
 function renderMap(){
   const fk = focusKey();
   computeSrc();
-  $("#offIn").value = S.offset.toFixed(3);
+  if (!secById(selSec)) selSec = S.sections[0] ? S.sections[0].id : null;
   let bar = 1;
   $("#mapBody").innerHTML = S.sections.map((s, i) => {
-    const w = `mm. ${bar}–${bar + s.bars - 1} · ${fmtT2(Math.max(0, s.start))}`; bar += s.bars;
-    const mc = meterCells(s);
-    return `<tr data-sid="${s.id}" class="${s.id === selSec ? "sel" : ""}">
-      <td class="stick"><span class="gripcell"><span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Drag to reorder ${esc(s.label)}. Arrow keys move it." title="Drag to reorder">⠿</span>${S.set.autoLabel === false ? `<input class="lab" type="text" data-f="label" value="${esc(s.label)}" maxlength="4" aria-label="Rehearsal mark">` : `<span class="mark">${esc(s.label)}</span>`}</span></td>
-      <td><input class="nm" type="text" data-f="name" value="${esc(s.name)}" aria-label="Section name"></td>
-      <td><input type="number" data-f="bars" value="${s.bars}" min="1" step="1" aria-label="Bars"></td>
-      <td>${mc.sig}</td>
-      <td><span class="tcell">${mc.tempo}<button class="btn sm" data-a="x2" title="Double the tempo">×2</button><button class="btn sm" data-a="h2" title="Halve the tempo">÷2</button></span></td>
-      <td><span class="tcell">→ <input type="number" data-f="rampTo" value="${hasRamp(s) ? fmtBpm(s.rampTo) : ""}" placeholder="steady" min="10" max="600" step="0.01" class="w6" title="Tempo it slows or speeds to by the end of the section" aria-label="Ramp to BPM">
-        <span class="muted">last</span> <input type="number" data-f="rampBars" value="${hasRamp(s) ? clamp(Math.round(s.rampBars || s.bars), 1, s.bars) : ""}" placeholder="${Math.min(2, s.bars)}" min="1" max="${s.bars}" step="1" style="width:3.6em" title="How many bars at the end the rit. or accel. lasts" aria-label="Ramp over last bars"> <span class="muted">bars</span></span></td>
-      <td>${mc.clickOn}</td>
-      <td><input type="number" data-f="nudge" value="${Math.round(s.nudge||0)}" step="5" ${i === 0 ? 'disabled title="Use Bar 1 offset for the first section"' : ""} aria-label="Start nudge in milliseconds"></td>
-      <td><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"} aria-label="Click on"></td>
-      <td class="where num">${w}</td>
-      <td><div class="acts">
-        <button class="btn sm" data-a="insA" title="Insert a bar before this section">+ above</button>
-        <button class="btn sm" data-a="insB" title="Insert a bar after this section">+ below</button>
-        <button class="btn sm" data-a="detect" title="Detect this section's tempo from the audio">Detect</button>
-        <button class="btn sm" data-a="here" title="Start this section at the playhead">Start at ▼</button>
-        <button class="btn sm" data-a="merge" title="Merge with the next section" ${i === S.sections.length - 1 ? "disabled" : ""}>Merge ↓</button>
-        <button class="btn sm danger" data-a="del" title="Remove (later sections stay where they are)">✕</button>
-      </div></td></tr>`;
-  }).join("") || `<tr><td colspan="11" class="muted">No sections yet. Auto-detect, or add one.</td></tr>`;
+    const a = bar; bar += s.bars;
+    const tags = [];
+    if (s.mute) tags.push(`<span class="badge dim">no click</span>`);
+    if (i > 0 && (s.nudge || 0) > 1) tags.push(`<span class="badge dim" title="Free time before this section">hold</span>`);
+    return `<div class="row${s.id === selSec ? " sel" : ""}" data-sid="${s.id}">
+      <span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Move ${esc(s.label)}. Drag, or use the arrow keys." title="Drag to reorder">⠿</span>
+      <span class="mark">${esc(s.label)}</span>
+      <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div>
+        <div class="meta">mm. ${a}–${a + s.bars - 1} · ${esc(sigTxt(s))} · ${esc(tempoTxt(s))} · ${fmtT2(Math.max(0, s.start))}</div></div>
+      <div class="tags">${tags.join("")}</div></div>`;
+  }).join("") || `<div class="empty">No sections yet. Press Auto-detect tempo, or Add section.</div>`;
+  renderMapInsp();
   refocus(fk);
 }
-$("#mapBody").addEventListener("click", e => {
+function renderMapInsp(){
+  const s = secById(selSec), el = $("#mapInsp");
+  if (!s){ el.innerHTML = `<div class="insp-empty">Pick a section on the left to edit it.</div>`; return; }
+  const i = S.sections.indexOf(s), mc = meterCells(s);
+  let a = 1; for (let k = 0; k < i; k++) a += S.sections[k].bars;
+  const rb = hasRamp(s) ? clamp(Math.round(s.rampBars || s.bars), 1, s.bars) : "";
+  el.innerHTML = `<div data-sid="${s.id}">
+    <div class="insp-head">${S.set.autoLabel === false ? `<input class="lab" type="text" data-f="label" value="${esc(s.label)}" maxlength="4" aria-label="Rehearsal mark">` : `<span class="mark">${esc(s.label)}</span>`}
+      <input type="text" data-f="name" value="${esc(s.name)}" placeholder="Name, e.g. Verse 1" aria-label="Section name"></div>
+    <div class="group"><h3>Length</h3>
+      <label class="f"><span>Bars</span><input type="number" data-f="bars" value="${s.bars}" min="1" step="1"><small class="num">mm. ${a}–${a + s.bars - 1}</small></label></div>
+    <div class="group"><h3>Meter</h3>
+      <div class="f"><span>Time signature</span>${mc.sig}</div>
+      <div class="f"><span>Click plays</span>${mc.clickOn}</div></div>
+    <div class="group"><h3>Tempo</h3>
+      ${tempoRows(s, `<button class="btn sm" data-a="x2" title="Double the tempo">×2</button><button class="btn sm" data-a="h2" title="Halve the tempo">÷2</button>`)}
+      <div class="btns"><button class="btn sm" data-a="detect">Detect from audio</button></div>
+      <div class="f"><span>Rit. / accel.</span>to <input type="number" data-f="rampTo" value="${hasRamp(s) ? fmtBpm(s.rampTo) : ""}" placeholder="steady" min="10" max="600" step="0.01" class="w6" aria-label="Ends at BPM"></div>
+      <div class="f"><span></span>over last <input type="number" data-f="rampBars" value="${rb}" placeholder="${Math.min(2, s.bars)}" min="1" max="${s.bars}" step="1" style="width:4em" aria-label="Over last bars"> bars</div></div>
+    <div class="group"><h3>Position</h3>
+      ${i === 0 ? `<div class="f"><span>Bar 1 at</span><input type="number" data-f="offset" value="${S.offset.toFixed(3)}" step="0.001" min="0" class="w6"> <small>s</small></div>
+      <div class="btns"><button class="btn sm" data-a="off" data-off="-beat">−1 beat</button><button class="btn sm" data-a="off" data-off="-0.01">−10 ms</button><button class="btn sm" data-a="off" data-off="0.01">+10 ms</button><button class="btn sm" data-a="off" data-off="beat">+1 beat</button></div>`
+      : `<div class="f"><span>Starts at</span><b class="num">${fmtT2(Math.max(0, s.start))}</b></div>
+      <div class="f"><span>Hold before</span><input type="number" data-f="nudge" value="${Math.round(s.nudge || 0)}" step="5"> <small>ms of free time</small></div>`}
+      <div class="btns"><button class="btn sm" data-a="here">Start at playhead</button></div>
+      <label class="f"><span>Click</span><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"}> <small>play click in this section</small></label></div>
+    <div class="group"><h3>Edit</h3>
+      <div class="btns"><button class="btn sm" data-a="insA">+ Bar before</button><button class="btn sm" data-a="insB">+ Bar after</button>
+        <button class="btn sm" data-a="merge" ${i === S.sections.length - 1 ? "disabled" : ""}>Merge with next</button>
+        <button class="btn sm danger" data-a="del">Delete</button></div></div>
+  </div>`;
+}
+function mapClick(e){
   const row = e.target.closest("[data-sid]"); if (!row) return;
   const id = row.dataset.sid; const a = e.target.closest("[data-a]");
   if (a && a.dataset.a === "grip") return;
-  if (!a){ if (selSec !== id){ selSec = id; document.querySelectorAll("#mapBody tr").forEach(r => r.classList.toggle("sel", r.dataset.sid === id)); if (view === "map") drawLane(); } return; }
+  if (!a){ if (row.closest("#mapBody") && selSec !== id){ selSec = id; renderMap(); if (view === "map") drawLane(); } return; }
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
+  if (act === "off"){
+    const k = a.dataset.off, s0 = S.sections[0];
+    const bl = s0 ? barDur(s0) / barClicks(s0).filter(x => x[1] !== "sub").length : 0.5;
+    const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
+    mut(() => S.offset = Math.max(0, +(S.offset + d).toFixed(4)));
+  }
   if (act === "detect") detectSection(s);
   if (act === "insA") insertSection(s, "above");
   if (act === "insB") insertSection(s, "below");
-  if (act === "up" || act === "down") moveSection(i, act === "up" ? -1 : 1);
   if (act === "x2" || act === "h2"){ mut(() => s.bpm = clamp(act === "x2" ? s.bpm * 2 : s.bpm / 2, 10, 600)); toast(`${s.label}: ${tempoTxt(s)}`); }
   if (act === "here") startSecAt(s, srcPlayhead());
   if (act === "merge"){
@@ -997,6 +1031,7 @@ $("#mapBody").addEventListener("click", e => {
     toast(`Merged ${n.label} into ${s.label}`);
   }
   if (act === "del"){
+    const lbl = s.label;
     mut(() => {
       computeSrc(); const n = S.sections[i+1];
       if (n){
@@ -1004,24 +1039,29 @@ $("#mapBody").addEventListener("click", e => {
         else n.nudge = (n.start - (s.start - (s.nudge || 0) / 1000)) * 1000;
       }
       S.sections.splice(i, 1); S.arr = S.arr.filter(e => e.sec !== id);
+      selSec = (S.sections[i] || S.sections[i - 1] || {}).id;
     });
-    toast(`Removed ${s.label}`);
+    toast(`Deleted ${lbl}. Undo brings it back.`);
   }
-});
-$("#mapBody").addEventListener("change", e => {
+}
+function mapChange(e){
   const row = e.target.closest("[data-sid]"); const f = e.target.dataset.f; if (!row || !f) return;
   const s = secById(row.dataset.sid); const v = e.target.value;
   mut(() => {
     if (f === "label") s.label = v.trim() || nextLabel();
     else if (f === "name") s.name = v;
+    else if (f === "offset") S.offset = Math.max(0, +v || 0);
     else if (f === "bars"){ s.bars = clamp(Math.round(+v || 1), 1, 9999); if (s.rampBars > s.bars) s.rampBars = s.bars; }
     else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(s, f, v)) return; }
     else if (f === "rampTo"){ s.rampTo = v === "" ? 0 : clamp(+v || 0, 10, 600); if (s.rampTo && !s.rampBars) s.rampBars = Math.min(2, s.bars); }
     else if (f === "rampBars"){ s.rampBars = v === "" ? 0 : clamp(Math.round(+v || 1), 1, s.bars); }
-    else if (f === "nudge") s.nudge = +v || 0;
+    else if (f === "nudge") s.nudge = Math.max(0, +v || 0);
     else if (f === "click") s.mute = !e.target.checked;
   });
-});
+}
+$("#mapBody").addEventListener("click", mapClick);
+$("#mapInsp").addEventListener("click", mapClick);
+$("#mapInsp").addEventListener("change", mapChange);
 // Insert a 1-bar section next to s. It uses up any unmapped audio first (before bar 1, or a hold),
 // so music that was already lined up stays put; only if there isn't room do later sections move later.
 function insertSection(s, where){
@@ -1070,42 +1110,50 @@ function moveSectionTo(from, to){
     S.sections.forEach((x, i) => { x.nudge = nudges[i]; delete x.pre; }); S.sections[0].nudge = 0;
     selSec = moved.id;
   });
-  const g = document.querySelector(`#mapBody tr[data-sid="${moved.id}"] .grip`); if (g) g.focus();
+  const g = document.querySelector(`#mapBody .row[data-sid="${moved.id}"] .grip`); if (g) g.focus();
 }
 function moveSection(i, dir){ moveSectionTo(i, i + dir); }
-let rowDrag = null;
-$("#mapBody").addEventListener("pointerdown", e => {
-  const g = e.target.closest(".grip"); if (!g || locked) return;
-  e.preventDefault();
-  const tr = g.closest("tr"); const rows = [...$("#mapBody").children];
-  rowDrag = {from:rows.indexOf(tr), to:rows.indexOf(tr), id:e.pointerId, tr};
-  g.setPointerCapture(e.pointerId); tr.classList.add("lifting"); document.body.classList.add("rowdrag");
-});
-$("#mapBody").addEventListener("pointermove", e => {
-  if (!rowDrag || e.pointerId !== rowDrag.id) return;
-  const rows = [...$("#mapBody").children];
-  rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
-  let slot = rows.length;   // insertion slot: before rows[slot]
-  for (let i = 0; i < rows.length; i++){ const b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2){ slot = i; break; } }
-  const target = slot > rowDrag.from ? slot - 1 : slot;
-  rowDrag.to = target;
-  if (target !== rowDrag.from){ if (slot < rows.length) rows[slot].classList.add("drop-before"); else rows[rows.length - 1].classList.add("drop-after"); }
-  const sc = window.innerHeight; if (e.clientY > sc - 40) window.scrollBy(0, 14); else if (e.clientY < 40) window.scrollBy(0, -14);
-});
-function endRowDrag(e){
-  if (!rowDrag || e.pointerId !== rowDrag.id) return;
-  const {from, to} = rowDrag; rowDrag = null;
-  document.body.classList.remove("rowdrag");
-  document.querySelectorAll("#mapBody tr").forEach(r => r.classList.remove("lifting", "drop-before", "drop-after"));
-  if (to !== from){ const lbl = S.sections[from].label; moveSectionTo(from, to); toast(S.set.autoLabel === false ? `Moved ${lbl}.` : `Moved. Letters now run A to ${letterFor(S.sections.length - 1)} from the top.`); }
+// drag ⠿ to reorder rows in either list (arrow keys on the handle work too)
+function rowDragger(list, moveTo){
+  let rd = null;
+  list.addEventListener("pointerdown", e => {
+    const g = e.target.closest(".grip"); if (!g || locked) return;
+    e.preventDefault();
+    const row = g.closest(".row"), rows = [...list.querySelectorAll(".row")];
+    rd = {from:rows.indexOf(row), to:rows.indexOf(row), id:e.pointerId};
+    g.setPointerCapture(e.pointerId); row.classList.add("lifting"); document.body.classList.add("rowdrag");
+  });
+  list.addEventListener("pointermove", e => {
+    if (!rd || e.pointerId !== rd.id) return;
+    const rows = [...list.querySelectorAll(".row")];
+    rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
+    let slot = rows.length;
+    for (let i = 0; i < rows.length; i++){ const b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2){ slot = i; break; } }
+    const target = slot > rd.from ? slot - 1 : slot; rd.to = target;
+    if (target !== rd.from){ if (slot < rows.length) rows[slot].classList.add("drop-before"); else rows[rows.length - 1].classList.add("drop-after"); }
+    if (e.clientY > window.innerHeight - 40) window.scrollBy(0, 14); else if (e.clientY < 40) window.scrollBy(0, -14);
+  });
+  const end = e => {
+    if (!rd || e.pointerId !== rd.id) return;
+    const {from, to} = rd; rd = null;
+    document.body.classList.remove("rowdrag");
+    list.querySelectorAll(".row").forEach(r => r.classList.remove("lifting", "drop-before", "drop-after"));
+    if (to !== from) moveTo(from, to);
+  };
+  list.addEventListener("pointerup", end); list.addEventListener("pointercancel", end);
+  list.addEventListener("keydown", e => {
+    const g = e.target.closest(".grip"); if (!g || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+    e.preventDefault(); const rows = [...list.querySelectorAll(".row")], i = rows.indexOf(g.closest(".row"));
+    moveTo(i, i + (e.key === "ArrowUp" ? -1 : 1));
+  });
 }
-$("#mapBody").addEventListener("pointerup", endRowDrag);
-$("#mapBody").addEventListener("pointercancel", endRowDrag);
-$("#mapBody").addEventListener("keydown", e => {
-  const g = e.target.closest(".grip"); if (!g || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
-  e.preventDefault(); const i = S.sections.findIndex(x => x.id === g.closest("tr").dataset.sid);
-  moveSection(i, e.key === "ArrowUp" ? -1 : 1);
-});
+rowDragger($("#mapBody"), (from, to) => { moveSectionTo(from, to); if (S.set.autoLabel !== false) toast(`Moved. Letters now run A to ${letterFor(S.sections.length - 1)} from the top.`); });
+function moveEntTo(from, to){
+  to = clamp(to, 0, S.arr.length - 1); if (from === to) return;
+  const e = S.arr[from];
+  mut(() => { S.arr.splice(from, 1); S.arr.splice(to, 0, e); selEnt = e.id; });
+  const g = document.querySelector(`#ents .row[data-i="${S.arr.indexOf(e)}"] .grip`); if (g) g.focus();
+}
 function srcPlayhead(){
   const s = view === "map" ? playhead : srcAtRT(playhead);
   return s == null ? null : s;
@@ -1118,15 +1166,6 @@ function startSecAt(s, t){
   });
   toast(`${s.label} now starts at ${fmtT2(t)}`);
 }
-document.querySelectorAll("[data-off]").forEach(b => b.addEventListener("click", () => {
-  const k = b.dataset.off; const s0 = S.sections[0];
-  if (k === "ph"){ const t = srcPlayhead(); if (t == null) return toast("Move the playhead onto track audio first."); mut(() => S.offset = Math.max(0, t)); return; }
-  const bl = s0 ? barDur(s0) / barClicks(s0).filter(x => x[1] !== "sub").length : 0.5;
-  const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
-  mut(() => S.offset = Math.max(0, +(S.offset + d).toFixed(4)));
-}));
-$("#offIn").addEventListener("change", e => mut(() => S.offset = Math.max(0, +e.target.value || 0)));
-
 function splitAtPlayhead(){
   const t = srcPlayhead(); if (t == null) return toast("Move the playhead onto track audio first.");
   computeSrc();
@@ -1159,79 +1198,101 @@ $("#addSec").onclick = () => {
 };
 
 /* arrangement */
+let selEnt = null;
 function renderArr(){
   const fk = focusKey();
   const r = build("show");
-  const span = {}; r.forEach(c => { if (c.ent == null) return; const o = span[c.ent] || (span[c.ent] = {a:c.bar, b:c.bar}); o.b = c.bar + c.bars - 1; });
+  const span = {}; r.forEach(c => { if (c.ent == null || c.kind === "gap") return; const o = span[c.ent] || (span[c.ent] = {a:c.bar, b:c.bar}); o.b = c.bar + c.bars - 1; });
+  if (!S.arr.some(e => e.id === selEnt)) selEnt = S.arr[0] ? S.arr[0].id : null;
   $("#ents").innerHTML = S.arr.map((e, i) => {
     const sp = span[i] ? `mm. ${span[i].a}–${span[i].b}` : "not playing";
+    const grip = `<span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Move this entry. Drag, or use the arrow keys." title="Drag to reorder">⠿</span>`;
+    const sel = e.id === selEnt ? " sel" : "";
     if (e.kind === "click"){
-      return `<div class="ent" data-i="${i}">
-        <span class="mark click">${esc(e.label || "+")}</span>
-        <div class="info"><div class="nm">${esc(e.name || "Click bars")}<span class="badge click">click only</span></div><small>${sp}</small></div>
-        <div class="acts">${moveBtns(i)}</div>
-        <div class="ctl">
-          <label>Mark <input type="text" data-f="label" value="${esc(e.label||"+")}" style="width:3em" maxlength="4"></label>
-          <label>Name <input type="text" data-f="name" value="${esc(e.name||"")}" style="width:9em"></label>
-          <label>Bars <input type="number" data-f="bars" value="${e.bars}" min="1"></label>
-          <label>Time sig ${meterCells(e).sig}</label>
-          <label>Tempo ${meterCells(e).tempo}</label>
-          ${simple(e) ? "" : `<label>Click ${meterCells(e).clickOn}</label>`}
-        </div></div>`;
+      return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark click">${esc(e.label || "+")}</span>
+        <div style="min-width:0"><div class="nm">${esc(e.name || "Click bars")}</div><div class="meta">${sp} · ${e.bars} bars · ${esc(sigTxt(e))} · ${esc(tempoTxt(e))}</div></div>
+        <div class="tags"><span class="badge click">click only</span></div></div>`;
     }
     const s = secById(e.sec); if (!s) return "";
-    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0);
-    const isV = e.open || e.repeat > 1;
-    return `<div class="ent${isV ? " isvamp" : ""}" data-i="${i}">
-      <span class="mark${isV ? " vamp" : ""}">${esc(s.label)}</span>
-      <div class="info"><div class="nm">${esc(s.name || "Section " + s.label)}${e.open ? '<span class="badge">till ready</span>' : e.repeat > 1 ? `<span class="badge">×${e.repeat}</span>` : ""}</div>
-        <small>${sp} · ${nb} of ${s.bars} bars · ${esc(sigTxt(s))} · ${esc(tempoTxt(s))}</small></div>
-      <div class="acts">${moveBtns(i)}</div>
-      <div class="ctl">
-        <label>Plays <input type="number" data-f="repeat" value="${e.repeat}" min="1" max="99" title="How many times this section plays (export uses this for open vamps)"></label>
-        <label title="Loop until you press GO during playback"><input type="checkbox" data-f="open" ${e.open ? "checked" : ""}> Till ready (GO)</label>
-        <label>Cut first <input type="number" data-f="skipStart" value="${e.skipStart||0}" min="0" max="${s.bars - 1}"> bars</label>
-        <label>Cut last <input type="number" data-f="skipEnd" value="${e.skipEnd||0}" min="0" max="${s.bars - 1}"> bars</label>
-      </div></div>`;
-  }).join("") || `<div class="ent"><span></span><div class="info muted">Nothing in the running order. Add a section below.</div></div>`;
-  $("#addSel").innerHTML = S.sections.map(s => `<option value="${s.id}">${esc(s.label)} · ${esc(s.name || "Section")}</option>`).join("");
+    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = e.open || e.repeat > 1;
+    const tags = [];
+    if (e.open) tags.push(`<span class="badge">till GO</span>`); else if (e.repeat > 1) tags.push(`<span class="badge">×${e.repeat}</span>`);
+    if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
+    return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark${isV ? " vamp" : ""}">${esc(s.label)}</span>
+      <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${esc(tempoTxt(s))}</div></div>
+      <div class="tags">${tags.join("")}</div></div>`;
+  }).join("") || `<div class="empty">Nothing in the running order yet. Add a section above.</div>`;
+  $("#addSel").innerHTML = S.sections.map(s => `<option value="${s.id}">${esc(s.label)} · ${esc(s.name || "Section " + s.label)}</option>`).join("");
+  renderShowInsp(span);
   refocus(fk);
 }
-function moveBtns(i){ return `<button class="btn sm" data-a="up" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button><button class="btn sm" data-a="down" ${i === S.arr.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del" aria-label="Remove from running order">✕</button>`; }
-$("#ents").addEventListener("click", e => {
-  const a = e.target.closest("[data-a]"); const row = e.target.closest("[data-i]"); if (!a || !row) return;
-  const i = +row.dataset.i;
+function renderShowInsp(span){
+  const el = $("#showInsp"), i = S.arr.findIndex(e => e.id === selEnt), e = S.arr[i];
+  if (!e){ el.innerHTML = `<div class="insp-empty">Pick a row on the left to edit it.</div>`; return; }
+  const sp = span[i] ? `mm. ${span[i].a}–${span[i].b}` : "not playing";
+  const edit = `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from show</button></div></div>`;
+  if (e.kind === "click"){
+    const mc = meterCells(e);
+    el.innerHTML = `<div data-i="${i}">
+      <div class="insp-head"><input class="lab" type="text" data-f="label" value="${esc(e.label || "+")}" maxlength="4" aria-label="Mark"><input type="text" data-f="name" value="${esc(e.name || "")}" placeholder="Name, e.g. Intro click" aria-label="Name"></div>
+      <div class="group"><h3>Click only</h3><p class="note">Plays click with no track. ${sp}.</p>
+        <label class="f"><span>Bars</span><input type="number" data-f="bars" value="${e.bars}" min="1"></label>
+        <div class="f"><span>Time signature</span>${mc.sig}</div>
+        ${simple(e) ? "" : `<div class="f"><span>Click plays</span>${mc.clickOn}</div>`}
+        ${tempoRows(e)}</div>${edit}</div>`;
+    return;
+  }
+  const s = secById(e.sec);
+  el.innerHTML = `<div data-i="${i}">
+    <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><button class="btn sm" data-a="gomap" title="Edit tempo and meter in step 1">Tempo map →</button></div>
+    <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${esc(tempoTxt(s))}</p>
+      <label class="f"><span>Times</span><input type="number" data-f="repeat" value="${e.repeat}" min="1" max="99"></label>
+      <label class="f"><span>Vamp</span><input type="checkbox" data-f="open" ${e.open ? "checked" : ""}> <small>loop until GO when playing live</small></label></div>
+    <div class="group"><h3>Cut bars</h3>
+      <label class="f"><span>From the start</span><input type="number" data-f="skipStart" value="${e.skipStart || 0}" min="0" max="${s.bars - 1}"> <small>bars</small></label>
+      <label class="f"><span>From the end</span><input type="number" data-f="skipEnd" value="${e.skipEnd || 0}" min="0" max="${s.bars - 1}"> <small>bars</small></label></div>${edit}</div>`;
+}
+function showClick(ev){
+  const row = ev.target.closest("[data-i]"); if (!row) return;
+  const i = +row.dataset.i, a = ev.target.closest("[data-a]");
+  if (a && a.dataset.a === "grip") return;
+  if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderArr(); } return; }
+  if (a.dataset.a === "gomap"){ selSec = S.arr[i].sec; setTab("map"); return; }
   mut(() => {
     const arr = S.arr;
-    if (a.dataset.a === "up" && i > 0) [arr[i-1], arr[i]] = [arr[i], arr[i-1]];
-    if (a.dataset.a === "down" && i < arr.length - 1) [arr[i+1], arr[i]] = [arr[i], arr[i+1]];
-    if (a.dataset.a === "dup") arr.splice(i + 1, 0, {...arr[i], id:uid()});
-    if (a.dataset.a === "del") arr.splice(i, 1);
+    if (a.dataset.a === "dup"){ const c = {...arr[i], id:uid()}; arr.splice(i + 1, 0, c); selEnt = c.id; }
+    if (a.dataset.a === "del"){ arr.splice(i, 1); selEnt = (arr[i] || arr[i - 1] || {}).id; }
   });
-});
-$("#ents").addEventListener("change", e => {
-  const row = e.target.closest("[data-i]"); const f = e.target.dataset.f; if (!row || !f) return;
-  const en = S.arr[+row.dataset.i]; const v = e.target.value;
+}
+function showChange(ev){
+  const row = ev.target.closest("[data-i]"); const f = ev.target.dataset.f; if (!row || !f) return;
+  const en = S.arr[+row.dataset.i]; const v = ev.target.value;
   mut(() => {
-    if (f === "open") en.open = e.target.checked;
+    if (f === "open") en.open = ev.target.checked;
     else if (f === "label" || f === "name") en[f] = v;
     else if (f === "repeat") en.repeat = clamp(Math.round(+v || 1), 1, 99);
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
     else if (f === "bars") en.bars = clamp(Math.round(+v || 1), 1, 999);
     else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(en, f, v)) return; }
   });
-});
-$("#addEnt").onclick = () => { const id = $("#addSel").value; if (!id) return; mut(() => S.arr.push({id:uid(), kind:"sec", sec:id, repeat:1, open:false, skipStart:0, skipEnd:0})); };
+}
+$("#ents").addEventListener("click", showClick);
+$("#showInsp").addEventListener("click", showClick);
+$("#showInsp").addEventListener("change", showChange);
+rowDragger($("#ents"), moveEntTo);
+$("#addEnt").onclick = () => { const id = $("#addSel").value; if (!id) return; const e = {id:uid(), kind:"sec", sec:id, repeat:1, open:false, skipStart:0, skipEnd:0}; mut(() => { S.arr.push(e); selEnt = e.id; }); };
 $("#addIntro").onclick = () => {
   const first = S.arr.find(e => e.kind === "click" || secById(e.sec));
   const src = first ? (first.kind === "sec" ? secById(first.sec) : first) : null;
-  mut(() => S.arr.unshift(normMeter({id:uid(), kind:"click", label:"In", name:"Intro click", bars:2, ...(src ? steady(src) : {bpm:120, num:4, den:4, unit:"4"}), groups: src ? src.groups.slice() : undefined})));
-  toast("Added 2 bars of intro click before the track. Change the bars, tempo or time signature on it in the running order.");
+  const ne = normMeter({id:uid(), kind:"click", label:"In", name:"Intro click", bars:2, ...(src ? steady(src) : {bpm:120, num:4, den:4, unit:"4"}), groups: src ? src.groups.slice() : undefined});
+  mut(() => { S.arr.unshift(ne); selEnt = ne.id; });
+  toast("Added 2 bars of intro click. Set its bars, tempo and time signature on the right.");
 };
 $("#addClick").onclick = () => {
   const r = tl(); const c = chunkAt(playhead);
-  mut(() => S.arr.push(normMeter({id:uid(), kind:"click", label:"+", name:"Extra bars", bars:2, ...(c && c.bpm ? steady(c) : {bpm:120, num:4, den:4, unit:"4"})})));
-  toast("Click-only bars added at the end. Move them with ↑.");
+  const ne = normMeter({id:uid(), kind:"click", label:"+", name:"Extra bars", bars:2, ...(c && c.bpm ? steady(c) : {bpm:120, num:4, den:4, unit:"4"})});
+  mut(() => { S.arr.push(ne); selEnt = ne.id; });
+  toast("Click bars added at the end. Drag ⠿ to move them.");
 };
 $("#resetArr").onclick = () => mut(() => S.arr = defaultArr());
 function defaultArr(){ return S.sections.map(s => ({id:uid(), kind:"sec", sec:s.id, repeat:1, open:false, skipStart:0, skipEnd:0})); }
@@ -1262,13 +1323,18 @@ function setView(v){
   if (srcT == null) playhead = 0;
   else if (v === "map") playhead = clamp(srcT, 0, tl().total);
   else { const r = tl(); const c = r.find(c => c.src != null && srcT >= c.src && srcT < c.src + c.dur); playhead = c ? c.t + (srcT - c.src) : 0; }
-  $("#vMap").setAttribute("aria-pressed", v === "map"); $("#vShow").setAttribute("aria-pressed", v === "show");
-  $("#laneLbl").textContent = v === "map" ? "Tempo map · original track" : "Show running order";
+  $("#laneLbl").textContent = v === "map" ? "Original track" : "Show running order";
   drawLane(); updateReadout(); follow(); saveLocal();
 }
-$("#vMap").onclick = () => setView("map");
-$("#vShow").onclick = () => setView("show");
-
+let tab = "show";
+function setTab(t){
+  tab = t;
+  document.querySelectorAll(".step").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("#paneMap").hidden = t !== "map"; $("#paneShow").hidden = t !== "show"; $("#paneOut").hidden = t !== "out";
+  setView(t === "map" ? "map" : "show");
+  renderAll(); saveLocal();
+}
+document.querySelectorAll(".step").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
 /* transport */
 $("#playBtn").onclick = () => P ? stop() : play();
 $("#stopBtn").onclick = () => { stop(); updateReadout(); };
@@ -1326,8 +1392,10 @@ function tapFit(){
 }
 function renderTaps(){
   const f = tapFit();
-  $("#tapInfo").textContent = taps.length ? `${taps.length} taps${f ? " · " + f.bpm.toFixed(2) + " bpm" : " · keep going"}` : "No taps";
+  $("#tapInfo").textContent = taps.length ? `${taps.length} taps${f ? " · " + f.bpm.toFixed(1) + " bpm" : " · keep going"}` : "";
   $("#tapApply").disabled = !f || locked; $("#tapStart").disabled = !taps.length || locked; $("#tapClear").disabled = !taps.length;
+  $("#tapApply").hidden = !f; $("#tapStart").hidden = !taps.length; $("#tapClear").hidden = !taps.length;
+  $("#tapInfo").hidden = !taps.length;
   $("#tapBtn").disabled = false;
 }
 $("#tapBtn").onclick = tap;
@@ -1488,7 +1556,13 @@ async function loadFile(file){
     busy(""); toast("Couldn't read that file. Try WAV, MP3, M4A or FLAC.");
   }
 }
-function setViewSilent(v){ view = v; invalidate(); $("#vMap").setAttribute("aria-pressed", v === "map"); $("#vShow").setAttribute("aria-pressed", v === "show"); $("#laneLbl").textContent = v === "map" ? "Tempo map · original track" : "Show running order"; }
+function setViewSilent(v){
+  view = v; invalidate();
+  if (v === "map" && tab !== "map") tab = "map"; else if (v === "show" && tab === "map") tab = "show";
+  document.querySelectorAll(".step").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
+  $("#paneMap").hidden = tab !== "map"; $("#paneShow").hidden = tab !== "show"; $("#paneOut").hidden = tab !== "out";
+  $("#laneLbl").textContent = v === "map" ? "Original track" : "Show running order";
+}
 $("#fileIn").addEventListener("change", e => { loadFile(e.target.files[0]); e.target.value = ""; });
 let dragN = 0;
 window.addEventListener("dragenter", e => { if ([...e.dataTransfer.types].includes("Files")){ dragN++; $("#drop").hidden = false; } });
@@ -1712,7 +1786,9 @@ async function boot(){
   const apply = () => {
     const pr = ses.project || {};
     if (Array.isArray(pr.sections)){ S.offset = +pr.offset || 0; S.sections = pr.sections; S.arr = pr.arr || []; S.set = {...DEFAULT_SET, ...pr.set}; normAll(); }
-    selSec = ses.selSec || null; setViewSilent(ses.view === "map" ? "map" : "show");
+    selSec = ses.selSec || null; selEnt = ses.selEnt || null;
+    tab = ["map","show","out"].includes(ses.tab) ? ses.tab : (ses.view === "map" ? "map" : "show");
+    setViewSilent(tab === "map" ? "map" : "show");
     zoom = clamp(+ses.zoom || 1, 1, 200); $("#zoom").max = Math.max(24, Math.ceil(zoom)); $("#zoom").value = zoom;
     renderAll(); playhead = clamp(+ses.playhead || 0, 0, tl().total); updateReadout();
     if (ses.scroll) $("#lane").scrollLeft = ses.scroll;
