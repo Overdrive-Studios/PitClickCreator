@@ -122,6 +122,15 @@ tr[data-sid]{cursor:pointer}
 td input.lab{width:3em;font:800 14px var(--f-mark);text-align:center}
 td input.nm{width:9em}
 .where{font-size:12px;color:var(--muted)}
+.stick{position:sticky;left:0;z-index:2;background:var(--panel);box-shadow:1px 0 0 var(--line)}
+tr.sel td.stick{background:color-mix(in srgb,var(--amber) 13%,var(--panel))}
+.gripcell{display:inline-flex;align-items:center;gap:8px}
+.grip{cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding:4px 2px;border-radius:4px;touch-action:none;user-select:none}
+.grip:hover{color:var(--ink);background:var(--band)}
+tr.lifting td{opacity:.45}
+tr.drop-before td{box-shadow:inset 0 3px 0 var(--amber)}
+tr.drop-after td{box-shadow:inset 0 -3px 0 var(--amber)}
+body.rowdrag, body.rowdrag *{cursor:grabbing!important}
 .tcell{display:inline-flex;align-items:center;gap:4px}
 td select{max-width:11em}
 .acts{display:flex;gap:4px}
@@ -161,7 +170,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v9</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v10</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -219,6 +228,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
         <button class="btn" id="detectAll">Auto-detect tempo</button>
         <button class="btn" id="splitBtn">Split at playhead</button>
         <button class="btn" id="addSec">Add section</button>
+        <label class="inline" style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" id="autoLabel"> Letters follow order</label>
         <span class="grow"></span>
       </div>
       <div class="bar">
@@ -232,7 +242,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
       </div>
       <div class="scroll">
         <table>
-          <thead><tr><th>Mark</th><th>Name</th><th>Bars</th><th>Time sig</th><th>Tempo</th><th>Rit. / accel.</th><th>Click plays</th><th>Nudge ms</th><th>Click</th><th>Where</th><th></th></tr></thead>
+          <thead><tr><th class="stick">Mark</th><th>Name</th><th>Bars</th><th>Time sig</th><th>Tempo</th><th>Rit. / accel.</th><th>Click plays</th><th>Nudge ms</th><th>Click</th><th>Where</th><th></th></tr></thead>
           <tbody id="mapBody"></tbody>
         </table>
       </div>
@@ -403,7 +413,9 @@ let selSec = null;
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false};
+const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true};
+function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
+function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
 function snapshot(){ return JSON.stringify({offset:S.offset, sections:S.sections, arr:S.arr, set:S.set}); }
 let locked = false; try { locked = localStorage.getItem("pitclick:locked") === "1"; } catch(e){}
@@ -419,7 +431,7 @@ function applyLock(){
 function mut(fn, keepPh){
   if (locked){ toast("The show is locked. Press Unlock to make changes."); renderAll(); return; }
   hist.push(snapshot()); if (hist.length > 80) hist.shift();
-  fn(); saveLocal(); stopIfPlaying(); renderAll();
+  fn(); relabel(); saveLocal(); stopIfPlaying(); renderAll();
 }
 function undo(){
   if (locked){ toast("The show is locked. Press Unlock to make changes."); return; }
@@ -931,7 +943,7 @@ function renderMap(){
     const w = `mm. ${bar}–${bar + s.bars - 1} · ${fmtT2(Math.max(0, s.start))}`; bar += s.bars;
     const mc = meterCells(s);
     return `<tr data-sid="${s.id}" class="${s.id === selSec ? "sel" : ""}">
-      <td><input class="lab" type="text" data-f="label" value="${esc(s.label)}" maxlength="4" aria-label="Rehearsal mark"></td>
+      <td class="stick"><span class="gripcell"><span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Drag to reorder ${esc(s.label)}. Arrow keys move it." title="Drag to reorder">⠿</span>${S.set.autoLabel === false ? `<input class="lab" type="text" data-f="label" value="${esc(s.label)}" maxlength="4" aria-label="Rehearsal mark">` : `<span class="mark">${esc(s.label)}</span>`}</span></td>
       <td><input class="nm" type="text" data-f="name" value="${esc(s.name)}" aria-label="Section name"></td>
       <td><input type="number" data-f="bars" value="${s.bars}" min="1" step="1" aria-label="Bars"></td>
       <td>${mc.sig}</td>
@@ -943,8 +955,6 @@ function renderMap(){
       <td><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"} aria-label="Click on"></td>
       <td class="where num">${w}</td>
       <td><div class="acts">
-        <button class="btn sm" data-a="up" title="Move this section earlier" ${i === 0 ? "disabled" : ""} aria-label="Move section up">↑</button>
-        <button class="btn sm" data-a="down" title="Move this section later" ${i === S.sections.length - 1 ? "disabled" : ""} aria-label="Move section down">↓</button>
         <button class="btn sm" data-a="insA" title="Insert a bar before this section">+ above</button>
         <button class="btn sm" data-a="insB" title="Insert a bar after this section">+ below</button>
         <button class="btn sm" data-a="detect" title="Detect this section's tempo from the audio">Detect</button>
@@ -958,6 +968,7 @@ function renderMap(){
 $("#mapBody").addEventListener("click", e => {
   const row = e.target.closest("[data-sid]"); if (!row) return;
   const id = row.dataset.sid; const a = e.target.closest("[data-a]");
+  if (a && a.dataset.a === "grip") return;
   if (!a){ if (selSec !== id){ selSec = id; document.querySelectorAll("#mapBody tr").forEach(r => r.classList.toggle("sel", r.dataset.sid === id)); if (view === "map") drawLane(); } return; }
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
@@ -1038,13 +1049,52 @@ function insertSection(s, where){
   toast(`Added 1-bar section ${n.label} ${where} ${s.label}.${moved}${where === "above" && i === 0 && shift < 1e-3 ? " Click + above again for another bar." : ""}`);
 }
 // swap a section with its neighbour; any holds stay where they were in the timeline
-function moveSection(i, dir){
-  const j = i + dir; if (j < 0 || j >= S.sections.length) return;
+// move a section to a new position; holds (nudges) stay with their positions in the timeline
+function moveSectionTo(from, to){
+  to = clamp(to, 0, S.sections.length - 1); if (from === to) return;
+  const moved = S.sections[from];
   mut(() => {
-    const A = S.sections[i], B = S.sections[j]; const na = A.nudge || 0, nb = B.nudge || 0;
-    S.sections[i] = B; S.sections[j] = A; B.nudge = na; A.nudge = nb; S.sections[0].nudge = 0;
+    const nudges = S.sections.map(x => x.nudge || 0);
+    S.sections.splice(from, 1); S.sections.splice(to, 0, moved);
+    S.sections.forEach((x, i) => { x.nudge = nudges[i]; delete x.pre; }); S.sections[0].nudge = 0;
+    selSec = moved.id;
   });
+  const g = document.querySelector(`#mapBody tr[data-sid="${moved.id}"] .grip`); if (g) g.focus();
 }
+function moveSection(i, dir){ moveSectionTo(i, i + dir); }
+let rowDrag = null;
+$("#mapBody").addEventListener("pointerdown", e => {
+  const g = e.target.closest(".grip"); if (!g || locked) return;
+  e.preventDefault();
+  const tr = g.closest("tr"); const rows = [...$("#mapBody").children];
+  rowDrag = {from:rows.indexOf(tr), to:rows.indexOf(tr), id:e.pointerId, tr};
+  g.setPointerCapture(e.pointerId); tr.classList.add("lifting"); document.body.classList.add("rowdrag");
+});
+$("#mapBody").addEventListener("pointermove", e => {
+  if (!rowDrag || e.pointerId !== rowDrag.id) return;
+  const rows = [...$("#mapBody").children];
+  rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
+  let slot = rows.length;   // insertion slot: before rows[slot]
+  for (let i = 0; i < rows.length; i++){ const b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2){ slot = i; break; } }
+  const target = slot > rowDrag.from ? slot - 1 : slot;
+  rowDrag.to = target;
+  if (target !== rowDrag.from){ if (slot < rows.length) rows[slot].classList.add("drop-before"); else rows[rows.length - 1].classList.add("drop-after"); }
+  const sc = window.innerHeight; if (e.clientY > sc - 40) window.scrollBy(0, 14); else if (e.clientY < 40) window.scrollBy(0, -14);
+});
+function endRowDrag(e){
+  if (!rowDrag || e.pointerId !== rowDrag.id) return;
+  const {from, to} = rowDrag; rowDrag = null;
+  document.body.classList.remove("rowdrag");
+  document.querySelectorAll("#mapBody tr").forEach(r => r.classList.remove("lifting", "drop-before", "drop-after"));
+  if (to !== from){ const lbl = S.sections[from].label; moveSectionTo(from, to); toast(S.set.autoLabel === false ? `Moved ${lbl}.` : `Moved. Letters now run A to ${letterFor(S.sections.length - 1)} from the top.`); }
+}
+$("#mapBody").addEventListener("pointerup", endRowDrag);
+$("#mapBody").addEventListener("pointercancel", endRowDrag);
+$("#mapBody").addEventListener("keydown", e => {
+  const g = e.target.closest(".grip"); if (!g || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+  e.preventDefault(); const i = S.sections.findIndex(x => x.id === g.closest("tr").dataset.sid);
+  moveSection(i, e.key === "ArrowUp" ? -1 : 1);
+});
 function srcPlayhead(){
   const s = view === "map" ? playhead : srcAtRT(playhead);
   return s == null ? null : s;
@@ -1172,10 +1222,12 @@ function defaultArr(){ return S.sections.map(s => ({id:uid(), kind:"sec", sec:s.
 /* settings */
 function renderSettings(){
   const s = S.set;
+  $("#autoLabel").checked = s.autoLabel !== false;
   $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
 $("#setCount").onchange = e => mut(() => S.set.countIn = +e.target.value);
+$("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
 $("#setSound").onchange = e => mut(() => S.set.sound = e.target.value);
 $("#setSub").onchange = e => mut(() => S.set.sub = +e.target.value);
 $("#setAccent").onchange = e => mut(() => S.set.accent = e.target.checked);
