@@ -188,7 +188,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v13</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v14</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -231,6 +231,8 @@ body.locked .pane .card{opacity:.75}
     <div class="card">
       <div class="tools">
         <button class="btn" id="detectAll">Auto-detect tempo</button>
+        <button class="btn primary" id="lineUpAll" title="Snap every section's beats onto the hits in the audio">Line up all</button>
+        <label class="inline" title="Also fine-tune each section's tempo while lining up"><input type="checkbox" id="fitTempo" checked> fit tempo</label>
         <button class="btn" id="splitBtn" title="Split the section under the playhead (S)">Split at playhead</button>
         <button class="btn" id="addSec">Add section</button>
         <span class="taps">
@@ -875,7 +877,8 @@ function drawLane(){
       const x = Math.round(tb * pps) + 0.5;
       const bc = tm.clicks[b].filter(z => z[1] !== "sub");
       g.fillStyle = C.line; g.fillRect(x - 0.5, 24, 1, H - 24);
-      if (((tm.barT[b + 1] - tm.barT[b]) / bc.length) * pps > 9){ for (let k = 1; k < bc.length; k++){ const xb = (tb + bc[k][0]) * pps; if (xb < (c.t + c.dur) * pps) g.fillRect(Math.round(xb), bot - 6, 1, 6); } }
+      const bw = ((tm.barT[b + 1] - tm.barT[b]) / bc.length) * pps;
+      if (bw > 9){ for (let k = 1; k < bc.length; k++){ const xb = (tb + bc[k][0]) * pps; if (xb < (c.t + c.dur) * pps){ g.fillRect(Math.round(xb), bot - 6, 1, 6); if (bw > 22){ g.globalAlpha = 0.45; g.fillRect(Math.round(xb), top, 1, bot - top); g.globalAlpha = 1; } } } }
       const n = c.kind === "lead" ? "c" + (b - b0 + 1) : String(c.bar + b - b0);
       if (x - lastLbl > 26 && c.kind !== "lead" || (c.kind === "lead" && x - lastLbl > 18)){ g.fillStyle = C.muted; g.fillText(n, x + 3, 26); lastLbl = x; }
     }
@@ -1002,6 +1005,7 @@ function renderMap(){
   renderMapInsp();
   refocus(fk);
 }
+const nudgeBtns = () => [["-beat","−1 beat"],["-0.01","−10 ms"],["-0.001","−1 ms"],["0.001","+1 ms"],["0.01","+10 ms"],["beat","+1 beat"]].map(([d, t]) => `<button class="btn sm" data-a="off" data-off="${d}">${t}</button>`).join("");
 function renderMapInsp(){
   const s = secById(selSec), el = $("#mapInsp");
   if (!s){ el.innerHTML = `<div class="insp-empty">Pick a section on the left to edit it.</div>`; return; }
@@ -1023,10 +1027,12 @@ function renderMapInsp(){
       <div class="f"><span></span>over last <input type="number" data-f="rampBars" value="${rb}" placeholder="${Math.min(2, s.bars)}" min="1" max="${s.bars}" step="1" style="width:4em" aria-label="Over last bars"> bars</div></div>
     <div class="group"><h3>Position</h3>
       ${i === 0 ? `<div class="f"><span>Bar 1 at</span><input type="number" data-f="offset" value="${S.offset.toFixed(3)}" step="0.001" min="0" class="w6"> <small>s</small></div>
-      <div class="btns"><button class="btn sm" data-a="off" data-off="-beat">−1 beat</button><button class="btn sm" data-a="off" data-off="-0.01">−10 ms</button><button class="btn sm" data-a="off" data-off="0.01">+10 ms</button><button class="btn sm" data-a="off" data-off="beat">+1 beat</button></div>`
+      <div class="btns">${nudgeBtns()}</div>
+      <div class="f"><span>Move whole map</span><span class="btns"><button class="btn sm" data-a="all" data-d="-0.01">−10 ms</button><button class="btn sm" data-a="all" data-d="-0.001">−1 ms</button><button class="btn sm" data-a="all" data-d="0.001">+1 ms</button><button class="btn sm" data-a="all" data-d="0.01">+10 ms</button></span></div>`
       : `<div class="f"><span>Starts at</span><input type="text" data-f="start" value="${fmtT2(Math.max(0, s.start))}" class="num" style="width:6.4em" aria-label="Start time"></div>
+      <div class="btns">${nudgeBtns()}</div>
       ${(() => { const p = S.sections[i - 1]; const gap = s.start - p.end; return gap > 0.01 ? `<p class="note">${gap.toFixed(2)} s of free time (no click) after ${esc(p.label)}.</p>` : gap < -0.01 ? `<p class="note" style="color:var(--danger)">${esc(p.label)} runs ${(-gap).toFixed(2)} s into this section. Shorten ${esc(p.label)} or move this start.</p>` : ""; })()}`}
-      <div class="btns"><button class="btn sm" data-a="here">Start at playhead</button></div>
+      <div class="btns"><button class="btn primary sm" data-a="lineup" title="Snap this section's beats onto the hits in the audio">Line up with audio</button><button class="btn sm" data-a="here">Start at playhead</button></div>
       <label class="f"><span>Click</span><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"}> <small>play click in this section</small></label></div>
     <div class="group"><h3>Edit</h3>
       <div class="btns"><button class="btn sm" data-a="insA">+ Bar before</button><button class="btn sm" data-a="insB">+ Bar after</button>
@@ -1042,11 +1048,18 @@ function mapClick(e){
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "off"){
-    const k = a.dataset.off, s0 = S.sections[0];
-    const bl = s0 ? barDur(s0) / barClicks(s0).filter(x => x[1] !== "sub").length : 0.5;
+    const k = a.dataset.off;
+    const bl = barDur(s) / barClicks(s).filter(x => x[1] !== "sub").length;
     const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
-    mut(() => { S.offset = Math.max(0, +(S.offset + d).toFixed(4)); if (s0) pin(s0.id, S.offset); });
+    computeSrc(); const t = Math.max(0, s.start + d);
+    mut(() => { if (i === 0) S.offset = +t.toFixed(4); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000; pin(s.id, t); });
   }
+  if (act === "all"){
+    const d = +a.dataset.d; computeSrc();
+    if (S.offset + d < 0) return toast("Bar 1 is already at the very start of the track.");
+    mut(() => { S.sections.forEach(x => pin(x.id, x.start + d)); S.offset = S.offset + d; });
+  }
+  if (act === "lineup") lineUp(s);
   if (act === "detect") detectSection(s);
   if (act === "insA") insertSection(s, "above");
   if (act === "insB") insertSection(s, "below");
@@ -1548,6 +1561,89 @@ function detectTempo(t0, t1){
   let fo = 0; while (fo < F && e[fo] < emax * 0.25) fo++;
   return {bpm: bb, beat: t0 + bph * hopS + centre, firstOnset: t0 + fo * hopS + centre};
 }
+// Onset envelope at ~6 ms resolution for lining the grid up with the hits in the audio.
+function onsetEnvelope(t0, t1){
+  const tr = track; if (!tr) return null;
+  const ds = Math.max(1, Math.round(tr.sr / 22050)), srd = tr.sr / ds;
+  const N = 256, H = 64;   // ~12 ms window, ~3 ms steps
+  const i0 = Math.max(0, Math.floor(t0 * tr.sr)), i1 = Math.min(tr.len, Math.floor(t1 * tr.sr));
+  const M = Math.floor((i1 - i0) / ds); if (M < N * 2) return null;
+  const m = new Float32Array(M);
+  for (let i = 0; i < M; i++){ const j = i0 + i*ds; let v = 0; for (const c of tr.ch) v += c[j]; m[i] = v; }
+  const F = Math.floor((M - N) / H); if (F < 20) return null;
+  const fft = makeFFT(N), re = new Float32Array(N), im = new Float32Array(N), win = new Float32Array(N), prev = new Float32Array(N/2), env = new Float32Array(F);
+  for (let k = 0; k < N; k++) win[k] = 0.5 - 0.5*Math.cos(2*Math.PI*k/N);
+  for (let f = 0; f < F; f++){
+    const o = f * H; for (let k = 0; k < N; k++){ re[k] = m[o+k] * win[k]; im[k] = 0; }
+    fft(re, im); let flux = 0;
+    // skip the lowest bins: bass notes smear in time, the attack lives higher up
+    for (let k = 3; k < N/2; k++){ const mag = Math.log1p(100 * Math.sqrt(re[k]*re[k] + im[k]*im[k])); const d = mag - prev[k]; if (d > 0) flux += d; prev[k] = mag; }
+    env[f] = f ? flux : 0;
+  }
+  const W = 24, ps = new Float64Array(F + 1); for (let i = 0; i < F; i++) ps[i+1] = ps[i] + env[i];
+  const e = new Float32Array(F);
+  for (let i = 0; i < F; i++){ const a = Math.max(0, i - W), b = Math.min(F, i + W + 1); const v = env[i] - (ps[b] - ps[a]) / (b - a); e[i] = v > 0 ? v : 0; }
+  const sm = new Float32Array(F); for (let i = 1; i < F - 1; i++) sm[i] = 0.25*e[i-1] + 0.5*e[i] + 0.25*e[i+1];
+  // spectral flux peaks a few ms before the attack; +5 ms puts the envelope on the hit itself
+  return {e:sm, F, hopS:H / srd, base: i0 / tr.sr + (N / 2) / srd + ONSET_BIAS};
+}
+let ONSET_BIAS = 0.0025;
+function envAt(E, t){ const x = (t - E.base) / E.hopS; if (x < 0 || x >= E.F - 1) return 0; const i = x | 0, f = x - i; return E.e[i] * (1 - f) + E.e[i + 1] * f; }
+// best start shift (d, seconds) and time scale (k) so the section's beats land on the hits
+function fitSection(s, fitTempo){
+  computeSrc(); const i = S.sections.indexOf(s), nx = S.sections[i + 1];
+  const end = Math.min(nx ? Math.min(s.end, nx.start) : s.end, track.dur);
+  if (end - s.start < 0.5) return null;
+  const E = onsetEnvelope(Math.max(0, s.start - 0.3), Math.min(track.dur, end + 0.3)); if (!E) return null;
+  const tm = timeMap(s, s.bars), beats = [];
+  for (let b = 0; b < tm.bars; b++) for (const c of tm.clicks[b]){ if (c[1] === "sub") continue; const t = tm.barT[b] + c[0]; if (t < end - s.start - 0.02) beats.push([t, c[1] === "acc" ? 1.3 : 1]); }
+  if (beats.length < 3) return null;
+  const score = (d, k) => { let v = 0; for (const [t, w] of beats) v += w * envAt(E, s.start + d + t * k); return v; };
+  let best = -1, bd = 0, bk = 1, sum = 0, n = 0;
+  const ks = fitTempo && beats.length >= 8 ? (() => { const a = []; for (let j = -20; j <= 20; j++) a.push(1 + j * 0.0005); return a; })() : [1];
+  // baseline: how the grid scores at arbitrary offsets, to judge whether there are real hits
+  for (let d = -0.15; d <= 0.15 + 1e-9; d += 0.003){ sum += score(d, 1); n++; }
+  for (const k of ks) for (let d = -0.15; d <= 0.15 + 1e-9; d += 0.003){ const v = score(d, k); if (v > best){ best = v; bd = d; bk = k; } }
+  for (let k = bk - 0.0006; k <= bk + 0.0006 + 1e-9; k += (ks.length > 1 ? 0.0001 : 1)) for (let d = bd - 0.004; d <= bd + 0.004 + 1e-9; d += 0.0005){ const v = score(d, k); if (v > best){ best = v; bd = d; bk = k; } }
+  const conf = n ? best / (sum / n + 1e-9) : 0;
+  // once the tempo gets rounded to a clean number, the start has to be re-fitted for that tempo
+  const refit = k => { let b2 = -1, d2 = bd; for (let d = bd - 0.08; d <= bd + 0.08 + 1e-9; d += 0.0005){ const v = score(d, k); if (v > b2){ b2 = v; d2 = d; } } return d2; };
+  return {d:bd, k:bk, conf, refit};
+}
+function applyFit(s, f){
+  let bpm = s.bpm / f.k; if (Math.abs(bpm - Math.round(bpm)) < 0.08) bpm = Math.round(bpm); else bpm = Math.round(bpm * 100) / 100;
+  const k = s.bpm / bpm; // the scale actually applied after rounding
+  const d = Math.abs(k - f.k) > 1e-7 ? f.refit(k) : f.d;
+  if (hasRamp(s)){ let r = s.rampTo / k; s.rampTo = Math.abs(r - Math.round(r)) < 0.06 ? Math.round(r) : Math.round(r * 100) / 100; }
+  s.bpm = bpm;
+  const t = Math.max(0, s.start + d); f.d = d;
+  if (S.sections[0] === s) S.offset = t;
+  pin(s.id, t);
+}
+async function lineUp(s){
+  if (!track) return;
+  const fitT = $("#fitTempo") ? $("#fitTempo").checked : true;
+  await busy("Lining up " + (s.name || "section " + s.label) + "…");
+  let f = null; try { f = fitSection(s, fitT); } catch(e){ f = null; }
+  busy("");
+  if (!f || f.conf < 1.35) return toast(`Couldn't find clear enough hits in ${s.name || s.label} to line up to. Nudge it by ear instead.`);
+  const before = tempoTxt(s);
+  mut(() => applyFit(s, f));
+  const ms = Math.round(f.d * 1000);
+  toast(`${s.name || s.label}: moved ${Math.abs(ms)} ms ${ms >= 0 ? "later" : "earlier"}${tempoTxt(s) !== before ? ", tempo now " + tempoTxt(s) : ""}. Nothing else moved.`);
+}
+async function lineUpAll(){
+  if (!track || !S.sections.length) return;
+  const fitT = $("#fitTempo") ? $("#fitTempo").checked : true;
+  await busy("Lining up all sections…");
+  const fits = []; try { computeSrc(); for (const s of S.sections) fits.push([s, fitSection(s, fitT)]); } catch(e){}
+  busy("");
+  const ok = fits.filter(([, f]) => f && f.conf >= 1.35);
+  if (!ok.length) return toast("Couldn't find clear hits to line up to. Nudge sections by ear instead.");
+  mut(() => { for (const [s, f] of ok) applyFit(s, f); });
+  const skipped = fits.length - ok.length;
+  toast(`Lined up ${ok.length} section${ok.length > 1 ? "s" : ""}${skipped ? `; ${skipped} had no clear hits and were left alone` : ""}. Undo puts them back.`);
+}
 async function detectAll(){
   if (!track) return;
   await busy("Detecting tempo…");
@@ -1566,6 +1662,7 @@ async function detectAll(){
   else toast("Couldn't hear a steady beat, so it's set to ♩ = 120 in 4/4. Type the tempo in, or tap along with T.");
 }
 $("#detectAll").onclick = detectAll;
+$("#lineUpAll").onclick = lineUpAll;
 async function detectSection(s){
   computeSrc(); const i = S.sections.indexOf(s); const nx = S.sections[i+1];
   const t1 = nx ? Math.min(s.end, nx.start) : Math.min(s.end, track.dur);
