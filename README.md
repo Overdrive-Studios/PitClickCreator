@@ -12,4 +12,4 @@ Open `index.html` in a browser. Everything runs locally; nothing is uploaded.
 
 Keys: Space play/pause, G go, T tap, S split at playhead, Ctrl/Cmd+Z undo.
 
-Note: export uses the claude.ai artifact download capability. When run outside claude.ai, export buttons are disabled.
+Export works in claude.ai and in any normal browser (it falls back to a regular download).
