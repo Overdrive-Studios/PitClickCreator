@@ -188,7 +188,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v12</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v13</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -241,6 +241,7 @@ body.locked .pane .card{opacity:.75}
           <button class="btn sm" id="tapClear" disabled hidden>Clear</button>
         </span>
         <span class="grow"></span>
+        <label class="inline" title="When on, editing one section never moves the others"><input type="checkbox" id="anchorChk"> Keep other sections in place</label>
         <label class="inline"><input type="checkbox" id="autoLabel"> Letters follow order</label>
       </div>
       <p class="hint">How the track was recorded. Pick a section to edit it, drag ⠿ to reorder, or drag a section's start line on the waveform.</p>
@@ -408,6 +409,7 @@ function barClicks(o){
 const sigTxt = o => `${o.num}/${o.den}${simple(o) || isCompound(o.num, o.den) && o.groups.every(g => g === 3) ? "" : " (" + o.groups.join("+") + ")"}`;
 const tempoTxt = o => `${USYM[o.unit]} = ${fmtBpm(o.bpm)}` + (hasRamp(o) ? ` → ${fmtBpm(o.rampTo)} ${o.rampTo < o.bpm ? "rit." : "accel."}` : "");
 function fmtT(t){ t = Math.max(0, t); const m = Math.floor(t/60); const s = t - m*60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); }
+function parseTime(v){ const m = String(v).trim().match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/); if (!m) return null; return (m[1] ? +m[1] * 60 : 0) + +m[2]; }
 function fmtT2(t){ const m = Math.floor(t/60); const s = t - m*60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(2); }
 const fmtBpm = b => (Math.round(b*100)/100).toString();
 function toast(msg){ const t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 3800); }
@@ -422,7 +424,7 @@ let selSec = null;
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true};
+const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true};
 function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
 function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
@@ -437,10 +439,33 @@ function applyLock(){
   $("#tapBtn").disabled = false;
   if (!locked){ renderTaps(); $("#undoBtn").disabled = !hist.length; }
 }
-function mut(fn, keepPh){
+// Anchoring: when "Keep other sections in place" is on, every section keeps its start time in the
+// audio through any edit. Only sections an edit explicitly pins (pin()) or new ones go somewhere new.
+const anchored = () => S.set.anchor !== false;
+let PINS = null;
+function pin(id, t){ if (PINS) PINS[id] = t; }
+function startsById(){ computeSrc(); const m = {}; S.sections.forEach(x => m[x.id] = x.start); return m; }
+function reanchor(old, pins){
+  let prevEnd = 0;
+  S.sections.forEach((x, i) => {
+    const want = pins && pins[x.id] != null ? pins[x.id] : old[x.id];
+    const dur = timeMap(x, x.bars).dur;
+    if (i === 0){ x.nudge = 0; if (want != null) S.offset = Math.max(0, +want.toFixed(4)); prevEnd = S.offset + dur; return; }
+    if (want != null) x.nudge = +((want - prevEnd) * 1000).toFixed(3);
+    prevEnd = prevEnd + (x.nudge || 0) / 1000 + dur;
+  });
+  computeSrc();
+}
+function mut(fn, opts){
   if (locked){ toast("The show is locked. Press Unlock to make changes."); renderAll(); return; }
   hist.push(snapshot()); if (hist.length > 80) hist.shift();
-  fn(); relabel(); saveLocal(); stopIfPlaying(); renderAll();
+  const anchor = S && anchored() && !(opts && opts.free);
+  const old = anchor ? startsById() : null;
+  PINS = {};
+  fn();
+  if (anchor && PINS) reanchor(old, PINS);
+  PINS = null;
+  relabel(); saveLocal(); stopIfPlaying(); renderAll();
 }
 function undo(){
   if (locked){ toast("The show is locked. Press Unlock to make changes."); return; }
@@ -901,7 +926,7 @@ function startDrag(e){
   const sid = secEdgeAt(e);
   if (sid){
     stopIfPlaying(); hist.push(snapshot()); if (hist.length > 80) hist.shift();
-    secDrag = {sid, id:e.pointerId}; selSec = sid;
+    secDrag = {sid, id:e.pointerId, old: startsById(), base: snapshot()}; selSec = sid;
     $("#laneInner").setPointerCapture(e.pointerId); $("#laneInner").classList.add("dragging");
     return;
   }
@@ -915,9 +940,11 @@ $("#laneInner").addEventListener("pointerdown", startDrag);
 $("#laneInner").addEventListener("pointermove", e => {
   if (secDrag && e.pointerId === secDrag.id){
     const s = secById(secDrag.sid); if (!s) return;
-    computeSrc(); const i = S.sections.indexOf(s), prev = S.sections[i - 1];
-    const t = Math.max(prev ? prev.start + 0.05 : 0, laneT(e));
+    computeSrc(); const i = S.sections.indexOf(s), prev = S.sections[i - 1], next = S.sections[i + 1];
+    let t = Math.max(prev ? prev.start + 0.05 : 0, laneT(e));
+    if (anchored() && next) t = Math.min(t, next.start - 0.05);
     if (i === 0) S.offset = +t.toFixed(4); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000;
+    if (anchored()) reanchor(secDrag.old, {[s.id]: t});
     invalidate(); if (!secDrag.raf) secDrag.raf = requestAnimationFrame(() => { if (secDrag) secDrag.raf = 0; drawLane(); });
     $("#roStatus").textContent = `${s.label} starts at ${fmtT2(t)}`;
     return;
@@ -931,7 +958,7 @@ $("#laneInner").addEventListener("pointermove", e => {
 function endDrag(e){
   if (secDrag && e.pointerId === secDrag.id){
     secDrag = null; $("#laneInner").classList.remove("dragging"); $("#roStatus").textContent = "";
-    saveLocal(); renderAll(); return;
+    relabel(); saveLocal(); renderAll(); return;
   }
   if (!drag || e.pointerId !== drag.id) return;
   const was = drag.was; drag = null;
@@ -962,7 +989,9 @@ function renderMap(){
     const a = bar; bar += s.bars;
     const tags = [];
     if (s.mute) tags.push(`<span class="badge dim">no click</span>`);
-    if (i > 0 && (s.nudge || 0) > 1) tags.push(`<span class="badge dim" title="Free time before this section">hold</span>`);
+    const nx = S.sections[i + 1];
+    if (i > 0 && s.start - S.sections[i - 1].end > 0.01) tags.push(`<span class="badge dim" title="Free time before this section">hold</span>`);
+    if (nx && nx.start < s.end - 0.01) tags.push(`<span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)" title="This section is longer than the space before ${esc(nx.label)}">runs into ${esc(nx.label)}</span>`);
     return `<div class="row${s.id === selSec ? " sel" : ""}" data-sid="${s.id}">
       <span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Move ${esc(s.label)}. Drag, or use the arrow keys." title="Drag to reorder">⠿</span>
       <span class="mark">${esc(s.label)}</span>
@@ -995,8 +1024,8 @@ function renderMapInsp(){
     <div class="group"><h3>Position</h3>
       ${i === 0 ? `<div class="f"><span>Bar 1 at</span><input type="number" data-f="offset" value="${S.offset.toFixed(3)}" step="0.001" min="0" class="w6"> <small>s</small></div>
       <div class="btns"><button class="btn sm" data-a="off" data-off="-beat">−1 beat</button><button class="btn sm" data-a="off" data-off="-0.01">−10 ms</button><button class="btn sm" data-a="off" data-off="0.01">+10 ms</button><button class="btn sm" data-a="off" data-off="beat">+1 beat</button></div>`
-      : `<div class="f"><span>Starts at</span><b class="num">${fmtT2(Math.max(0, s.start))}</b></div>
-      <div class="f"><span>Hold before</span><input type="number" data-f="nudge" value="${Math.round(s.nudge || 0)}" step="5"> <small>ms of free time</small></div>`}
+      : `<div class="f"><span>Starts at</span><input type="text" data-f="start" value="${fmtT2(Math.max(0, s.start))}" class="num" style="width:6.4em" aria-label="Start time"></div>
+      ${(() => { const p = S.sections[i - 1]; const gap = s.start - p.end; return gap > 0.01 ? `<p class="note">${gap.toFixed(2)} s of free time (no click) after ${esc(p.label)}.</p>` : gap < -0.01 ? `<p class="note" style="color:var(--danger)">${esc(p.label)} runs ${(-gap).toFixed(2)} s into this section. Shorten ${esc(p.label)} or move this start.</p>` : ""; })()}`}
       <div class="btns"><button class="btn sm" data-a="here">Start at playhead</button></div>
       <label class="f"><span>Click</span><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"}> <small>play click in this section</small></label></div>
     <div class="group"><h3>Edit</h3>
@@ -1016,7 +1045,7 @@ function mapClick(e){
     const k = a.dataset.off, s0 = S.sections[0];
     const bl = s0 ? barDur(s0) / barClicks(s0).filter(x => x[1] !== "sub").length : 0.5;
     const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
-    mut(() => S.offset = Math.max(0, +(S.offset + d).toFixed(4)));
+    mut(() => { S.offset = Math.max(0, +(S.offset + d).toFixed(4)); if (s0) pin(s0.id, S.offset); });
   }
   if (act === "detect") detectSection(s);
   if (act === "insA") insertSection(s, "above");
@@ -1050,12 +1079,13 @@ function mapChange(e){
   mut(() => {
     if (f === "label") s.label = v.trim() || nextLabel();
     else if (f === "name") s.name = v;
-    else if (f === "offset") S.offset = Math.max(0, +v || 0);
+    else if (f === "offset"){ S.offset = Math.max(0, +v || 0); pin(S.sections[0].id, S.offset); }
+    else if (f === "start"){ const t = parseTime(v); if (t == null){ toast("Type a time like 1:23.45 or 83.45"); return; } computeSrc(); const k = S.sections.indexOf(s); if (k === 0){ S.offset = Math.max(0, t); pin(s.id, S.offset); } else { s.nudge = (s.nudge || 0) + (t - s.start) * 1000; pin(s.id, t); } }
     else if (f === "bars"){ s.bars = clamp(Math.round(+v || 1), 1, 9999); if (s.rampBars > s.bars) s.rampBars = s.bars; }
     else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(s, f, v)) return; }
     else if (f === "rampTo"){ s.rampTo = v === "" ? 0 : clamp(+v || 0, 10, 600); if (s.rampTo && !s.rampBars) s.rampBars = Math.min(2, s.bars); }
     else if (f === "rampBars"){ s.rampBars = v === "" ? 0 : clamp(Math.round(+v || 1), 1, s.bars); }
-    else if (f === "nudge") s.nudge = Math.max(0, +v || 0);
+    else if (f === "nudge"){ s.nudge = Math.max(0, +v || 0); computeSrc(); pin(s.id, s.start); }
     else if (f === "click") s.mute = !e.target.checked;
   });
 }
@@ -1065,39 +1095,68 @@ $("#mapInsp").addEventListener("change", mapChange);
 // Insert a 1-bar section next to s. It uses up any unmapped audio first (before bar 1, or a hold),
 // so music that was already lined up stays put; only if there isn't room do later sections move later.
 function insertSection(s, where){
+  if (!anchored()) return insertSectionFlow(s, where);
+  computeSrc(); const i = S.sections.indexOf(s), nm = s.name || "section " + s.label;
+  const proto = steady(hasRamp(s) && where === "below" ? {...s, bpm:s.rampTo} : s);
+  const n = normMeter({id:uid(), label:nextLabel(), name: where === "above" && i === 0 ? "Pickup" : "", bars:1, ...proto, nudge:0, mute:s.mute});
+  n.groups = s.groups.slice();
+  const d = timeMap(n, 1).dur;
+  let msg = "";
+  if (where === "above"){
+    const at = s.start - d, prev = S.sections[i - 1];
+    if (!prev && at < -1e-3) return toast("There's no audio before bar 1 to add a bar into. Turn off “Keep other sections in place” to push everything later.");
+    if (prev && at < prev.end - 1e-3){
+      // no free space: the bar comes off the end of the previous section, so nothing moves
+      if (prev.bars < 2) return toast(`There's no room before ${s.label}: ${prev.label} is only one bar.`);
+      if (hasRamp(prev)) return toast(`There's no room before ${s.label}, and ${prev.label} ends in a rit./accel. Shorten ${prev.label} first.`);
+      msg = ` The bar came off the end of ${prev.name || "the previous section"}.`;
+      mut(() => { prev.bars -= 1; S.sections.splice(i, 0, n); pin(n.id, prev.start + timeMap(prev, prev.bars).dur); addEntNear(s, n, "above"); selSec = n.id; });
+    } else {
+      mut(() => { if (i === 0) n.pre = true; S.sections.splice(i, 0, n); pin(n.id, Math.max(0, at)); addEntNear(s, n, "above"); selSec = n.id; });
+    }
+  } else {
+    const at = s.end, nx = S.sections[i + 1];
+    if (nx && nx.start < at + d - 1e-3){
+      if (nx.start > at + 1e-3) return toast(`There's less than a bar of space after ${s.label}. Shorten something or move ${nx.label} first.`);
+      if (nx.bars < 2) return toast(`There's no room after ${s.label}: ${nx.label} is only one bar.`);
+      // take the first bar of the next section; its later bars stay exactly where they are
+      msg = ` The bar came off the start of ${nx.name || "the next section"}.`;
+      const nb = timeMap(steady(nx), 1).dur;
+      mut(() => { nx.bars -= 1; S.sections.splice(i + 1, 0, n); pin(n.id, at); pin(nx.id, nx.start + nb); addEntNear(s, n, "below"); selSec = n.id; });
+    } else {
+      mut(() => { S.sections.splice(i + 1, 0, n); pin(n.id, at); addEntNear(s, n, "below"); selSec = n.id; });
+    }
+  }
+  toast(`Added a bar ${where === "above" ? "before" : "after"} ${nm}.${msg} Nothing else moved.`);
+}
+function addEntNear(s, n, where){
+  const out = []; let placed = false;
+  const ne = {id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0};
+  for (const e of S.arr){
+    if (!placed && e.kind === "sec" && e.sec === s.id){ if (where === "above") out.push(ne, e); else out.push(e, ne); placed = true; }
+    else out.push(e);
+  }
+  if (!placed) out.push(ne);
+  S.arr = out;
+}
+// the old chained behaviour, used when "Keep other sections in place" is off
+function insertSectionFlow(s, where){
   computeSrc(); const i = S.sections.indexOf(s);
-  // repeated "+ above" on a pickup section we made just grows it, keeping bar 1's music where it is
   if (where === "above" && i === 0 && s.pre && !hasRamp(s)){
     const d = timeMap(steady(s), 1).dur;
     if (S.offset < d - 1e-3) return toast("There's no more audio before bar 1 to add a bar into.");
     mut(() => { s.bars += 1; S.offset = +(S.offset - d).toFixed(4); });
-    return toast(`${s.label} is now ${s.bars} bars. Nothing else moved.`);
+    return toast(`${s.label} is now ${s.bars} bars.`);
   }
   const n = normMeter({id:uid(), label:nextLabel(), name: where === "above" && i === 0 ? "Pickup" : "", bars:1, ...steady(hasRamp(s) && where === "below" ? {...s, bpm:s.rampTo} : s), nudge:0, mute:s.mute});
   n.groups = s.groups.slice();
-  const d = timeMap(n, 1).dur; let shift = d;
+  const d = timeMap(n, 1).dur;
   mut(() => {
-    if (where === "above" && i === 0){
-      const room = Math.max(0, S.offset); const use = Math.min(room, d); shift = d - use;
-      S.offset = +(S.offset - use).toFixed(4); n.pre = true; S.sections.unshift(n);
-    } else {
-      const at = where === "above" ? i : i + 1, nx = S.sections[at];
-      if (nx){ const gap = (nx.nudge || 0) / 1000; if (gap > 0){ const use = Math.min(gap, d); nx.nudge = (gap - use) * 1000; shift = d - use; } }
-      else shift = 0;
-      S.sections.splice(at, 0, n);
-    }
-    // give the running order a play of it next to where s plays
-    const out = []; let placed = false;
-    const ne = {id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0};
-    for (const e of S.arr){
-      if (!placed && e.kind === "sec" && e.sec === s.id){ if (where === "above") out.push(ne, e); else out.push(e, ne); placed = true; }
-      else out.push(e);
-    }
-    if (!placed) out.push(ne);
-    S.arr = out; selSec = n.id;
+    if (where === "above" && i === 0){ const use = Math.min(Math.max(0, S.offset), d); S.offset = +(S.offset - use).toFixed(4); n.pre = true; S.sections.unshift(n); }
+    else { const at = where === "above" ? i : i + 1, nx = S.sections[at]; if (nx){ const gap = (nx.nudge || 0) / 1000; if (gap > 0) nx.nudge = (gap - Math.min(gap, d)) * 1000; } S.sections.splice(at, 0, n); }
+    addEntNear(s, n, where); selSec = n.id;
   });
-  const moved = shift > 1e-3 ? " Later sections moved later by " + (shift / d > 0.99 ? "one bar" : shift.toFixed(2) + " s") + "." : " Nothing else moved.";
-  toast(`Added 1-bar section ${n.label} ${where} ${s.label}.${moved}${where === "above" && i === 0 && shift < 1e-3 ? " Click + above again for another bar." : ""}`);
+  toast(`Added a bar ${where === "above" ? "before" : "after"} ${s.label}. Later sections moved with it.`);
 }
 // swap a section with its neighbour; any holds stay where they were in the timeline
 // move a section to a new position; holds (nudges) stay with their positions in the timeline
@@ -1105,9 +1164,10 @@ function moveSectionTo(from, to){
   to = clamp(to, 0, S.sections.length - 1); if (from === to) return;
   const moved = S.sections[from];
   mut(() => {
-    const nudges = S.sections.map(x => x.nudge || 0);
+    computeSrc();
+    const nudges = S.sections.map(x => x.nudge || 0), slots = S.sections.map(x => x.start);
     S.sections.splice(from, 1); S.sections.splice(to, 0, moved);
-    S.sections.forEach((x, i) => { x.nudge = nudges[i]; delete x.pre; }); S.sections[0].nudge = 0;
+    S.sections.forEach((x, i) => { x.nudge = nudges[i]; delete x.pre; pin(x.id, slots[i]); }); S.sections[0].nudge = 0;
     selSec = moved.id;
   });
   const g = document.querySelector(`#mapBody .row[data-sid="${moved.id}"] .grip`); if (g) g.focus();
@@ -1163,8 +1223,9 @@ function startSecAt(s, t){
   mut(() => {
     computeSrc(); const i = S.sections.indexOf(s);
     if (i === 0) S.offset = Math.max(0, t); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000;
+    pin(s.id, Math.max(0, t));
   });
-  toast(`${s.label} now starts at ${fmtT2(t)}`);
+  toast(`${s.label} now starts at ${fmtT2(t)}${anchored() ? ". Nothing else moved." : ""}`);
 }
 function splitAtPlayhead(){
   const t = srcPlayhead(); if (t == null) return toast("Move the playhead onto track audio first.");
@@ -1301,11 +1362,13 @@ function defaultArr(){ return S.sections.map(s => ({id:uid(), kind:"sec", sec:s.
 function renderSettings(){
   const s = S.set;
   $("#autoLabel").checked = s.autoLabel !== false;
+  $("#anchorChk").checked = s.anchor !== false;
   $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
 $("#setCount").onchange = e => mut(() => S.set.countIn = clamp(Math.round(+e.target.value || 0), 0, 16));
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
+$("#anchorChk").onchange = e => { mut(() => S.set.anchor = e.target.checked, {free:true}); toast(e.target.checked ? "Editing a section won't move the others." : "Sections are chained: making one longer pushes the rest later."); };
 $("#setSound").onchange = e => mut(() => S.set.sound = e.target.value);
 $("#setSub").onchange = e => mut(() => S.set.sub = +e.target.value);
 $("#setAccent").onchange = e => mut(() => S.set.accent = e.target.checked);
@@ -1495,7 +1558,7 @@ async function detectAll(){
   if (r){ first = r.beat + Math.ceil((r.firstOnset - r.beat - 0.06) / bd) * bd; if (first < 0) first += bd; }
   const bars = Math.max(1, Math.floor((track.dur - first) / (bd * 4) + 0.25));
   mut(() => {
-    S.offset = +first.toFixed(4);
+    S.offset = +first.toFixed(4); PINS = null;
     S.sections = [normMeter({id:uid(), label:"A", name:"From top", bars, bpm, num:4, den:4, unit:"4", nudge:0, mute:false})];
     S.arr = defaultArr(); selSec = S.sections[0].id;
   });
@@ -1775,7 +1838,7 @@ async function openProject(file){
     const o = JSON.parse(await file.text());
     if (!Array.isArray(o.sections) || !Array.isArray(o.arr)) throw new Error("bad");
     if (track && o.track && o.track !== track.name) toast(`Project was made for “${o.track}”. Applied anyway.`);
-    mut(() => { S.offset = +o.offset || 0; S.sections = o.sections; S.arr = o.arr; S.set = {...DEFAULT_SET, ...o.set}; normAll(); });
+    mut(() => { S.offset = +o.offset || 0; S.sections = o.sections; S.arr = o.arr; S.set = {...DEFAULT_SET, ...o.set}; normAll(); PINS = null; });
   } catch(e){ toast("That isn't a Pit Click project file."); }
 }
 $("#projIn").addEventListener("change", e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ""; });
