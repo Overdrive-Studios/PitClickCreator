@@ -161,7 +161,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v8</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v9</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -194,7 +194,7 @@ kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:
   <section class="lanebox">
     <div class="lanehead">
       <span class="lbl" id="laneLbl">Show running order</span>
-      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split at playhead</span><span>Drag to move the playhead · pinch to zoom · two-finger swipe to scroll</span></span>
+      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split at playhead</span><span>Drag to move the playhead · in Tempo map, drag a section's start line to move it · pinch to zoom</span></span>
       <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="1" max="24" step="0.1" value="1" style="width:140px"></label>
     </div>
     <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
@@ -855,11 +855,25 @@ function drawLane(){
   $("#ph").style.left = (playhead * pps) + "px";
 }
 // drag anywhere on the lane (or the playhead) to scrub; playback resumes from where you let go
-let drag = null;
+let drag = null, secDrag = null;
 function laneT(e){ const r = $("#cv").getBoundingClientRect(); return clamp((e.clientX - r.left) / pps, 0, tl().total); }
+// in the tempo map, grab a section's start line to slide it (and everything after it) to the audio
+function secEdgeAt(e){
+  if (view !== "map" || locked) return null;
+  const x = laneT(e) * pps;
+  for (const c of tl()) if (c.kind === "sec" && c.sid && Math.abs(c.t * pps - x) < 7) return c.sid;
+  return null;
+}
 function startDrag(e){
   if (e.button > 0) return;
   e.preventDefault();
+  const sid = secEdgeAt(e);
+  if (sid){
+    stopIfPlaying(); hist.push(snapshot()); if (hist.length > 80) hist.shift();
+    secDrag = {sid, id:e.pointerId}; selSec = sid;
+    $("#laneInner").setPointerCapture(e.pointerId); $("#laneInner").classList.add("dragging");
+    return;
+  }
   drag = {was:!!P, id:e.pointerId, x0:e.clientX};
   stopIfPlaying();
   $("#laneInner").setPointerCapture(e.pointerId);
@@ -868,12 +882,26 @@ function startDrag(e){
 }
 $("#laneInner").addEventListener("pointerdown", startDrag);
 $("#laneInner").addEventListener("pointermove", e => {
-  if (!drag || e.pointerId !== drag.id) return;
+  if (secDrag && e.pointerId === secDrag.id){
+    const s = secById(secDrag.sid); if (!s) return;
+    computeSrc(); const i = S.sections.indexOf(s), prev = S.sections[i - 1];
+    const t = Math.max(prev ? prev.start + 0.05 : 0, laneT(e));
+    if (i === 0) S.offset = +t.toFixed(4); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000;
+    invalidate(); if (!secDrag.raf) secDrag.raf = requestAnimationFrame(() => { if (secDrag) secDrag.raf = 0; drawLane(); });
+    $("#roStatus").textContent = `${s.label} starts at ${fmtT2(t)}`;
+    return;
+  }
+  if (!drag){ $("#laneInner").style.cursor = secEdgeAt(e) ? "col-resize" : ""; return; }
+  if (e.pointerId !== drag.id) return;
   playhead = laneT(e); updateReadout();
   const lane = $("#lane"), r = lane.getBoundingClientRect();   // auto-scroll near the edges
   if (e.clientX > r.right - 30) lane.scrollLeft += 16; else if (e.clientX < r.left + 30) lane.scrollLeft -= 16;
 });
 function endDrag(e){
+  if (secDrag && e.pointerId === secDrag.id){
+    secDrag = null; $("#laneInner").classList.remove("dragging"); $("#roStatus").textContent = "";
+    saveLocal(); renderAll(); return;
+  }
   if (!drag || e.pointerId !== drag.id) return;
   const was = drag.was; drag = null;
   $("#laneInner").classList.remove("dragging");
@@ -915,6 +943,10 @@ function renderMap(){
       <td><input type="checkbox" data-f="click" ${s.mute ? "" : "checked"} aria-label="Click on"></td>
       <td class="where num">${w}</td>
       <td><div class="acts">
+        <button class="btn sm" data-a="up" title="Move this section earlier" ${i === 0 ? "disabled" : ""} aria-label="Move section up">↑</button>
+        <button class="btn sm" data-a="down" title="Move this section later" ${i === S.sections.length - 1 ? "disabled" : ""} aria-label="Move section down">↓</button>
+        <button class="btn sm" data-a="insA" title="Insert a bar before this section">+ above</button>
+        <button class="btn sm" data-a="insB" title="Insert a bar after this section">+ below</button>
         <button class="btn sm" data-a="detect" title="Detect this section's tempo from the audio">Detect</button>
         <button class="btn sm" data-a="here" title="Start this section at the playhead">Start at ▼</button>
         <button class="btn sm" data-a="merge" title="Merge with the next section" ${i === S.sections.length - 1 ? "disabled" : ""}>Merge ↓</button>
@@ -930,6 +962,9 @@ $("#mapBody").addEventListener("click", e => {
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "detect") detectSection(s);
+  if (act === "insA") insertSection(s, "above");
+  if (act === "insB") insertSection(s, "below");
+  if (act === "up" || act === "down") moveSection(i, act === "up" ? -1 : 1);
   if (act === "x2" || act === "h2"){ mut(() => s.bpm = clamp(act === "x2" ? s.bpm * 2 : s.bpm / 2, 10, 600)); toast(`${s.label}: ${tempoTxt(s)}`); }
   if (act === "here") startSecAt(s, srcPlayhead());
   if (act === "merge"){
@@ -965,6 +1000,51 @@ $("#mapBody").addEventListener("change", e => {
     else if (f === "click") s.mute = !e.target.checked;
   });
 });
+// Insert a 1-bar section next to s. It uses up any unmapped audio first (before bar 1, or a hold),
+// so music that was already lined up stays put; only if there isn't room do later sections move later.
+function insertSection(s, where){
+  computeSrc(); const i = S.sections.indexOf(s);
+  // repeated "+ above" on a pickup section we made just grows it, keeping bar 1's music where it is
+  if (where === "above" && i === 0 && s.pre && !hasRamp(s)){
+    const d = timeMap(steady(s), 1).dur;
+    if (S.offset < d - 1e-3) return toast("There's no more audio before bar 1 to add a bar into.");
+    mut(() => { s.bars += 1; S.offset = +(S.offset - d).toFixed(4); });
+    return toast(`${s.label} is now ${s.bars} bars. Nothing else moved.`);
+  }
+  const n = normMeter({id:uid(), label:nextLabel(), name: where === "above" && i === 0 ? "Pickup" : "", bars:1, ...steady(hasRamp(s) && where === "below" ? {...s, bpm:s.rampTo} : s), nudge:0, mute:s.mute});
+  n.groups = s.groups.slice();
+  const d = timeMap(n, 1).dur; let shift = d;
+  mut(() => {
+    if (where === "above" && i === 0){
+      const room = Math.max(0, S.offset); const use = Math.min(room, d); shift = d - use;
+      S.offset = +(S.offset - use).toFixed(4); n.pre = true; S.sections.unshift(n);
+    } else {
+      const at = where === "above" ? i : i + 1, nx = S.sections[at];
+      if (nx){ const gap = (nx.nudge || 0) / 1000; if (gap > 0){ const use = Math.min(gap, d); nx.nudge = (gap - use) * 1000; shift = d - use; } }
+      else shift = 0;
+      S.sections.splice(at, 0, n);
+    }
+    // give the running order a play of it next to where s plays
+    const out = []; let placed = false;
+    const ne = {id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0};
+    for (const e of S.arr){
+      if (!placed && e.kind === "sec" && e.sec === s.id){ if (where === "above") out.push(ne, e); else out.push(e, ne); placed = true; }
+      else out.push(e);
+    }
+    if (!placed) out.push(ne);
+    S.arr = out; selSec = n.id;
+  });
+  const moved = shift > 1e-3 ? " Later sections moved later by " + (shift / d > 0.99 ? "one bar" : shift.toFixed(2) + " s") + "." : " Nothing else moved.";
+  toast(`Added 1-bar section ${n.label} ${where} ${s.label}.${moved}${where === "above" && i === 0 && shift < 1e-3 ? " Click + above again for another bar." : ""}`);
+}
+// swap a section with its neighbour; any holds stay where they were in the timeline
+function moveSection(i, dir){
+  const j = i + dir; if (j < 0 || j >= S.sections.length) return;
+  mut(() => {
+    const A = S.sections[i], B = S.sections[j]; const na = A.nudge || 0, nb = B.nudge || 0;
+    S.sections[i] = B; S.sections[j] = A; B.nudge = na; A.nudge = nb; S.sections[0].nudge = 0;
+  });
+}
 function srcPlayhead(){
   const s = view === "map" ? playhead : srcAtRT(playhead);
   return s == null ? null : s;
@@ -1107,10 +1187,11 @@ function setView(v){
   if (v === view) return;
   stopIfPlaying();
   const from = view;
-  const srcT = from === "map" ? playhead : srcAtRT(playhead);
+  let srcT = from === "map" ? playhead : srcAtRT(playhead);
+  if (srcT != null && srcT < 0) srcT = 0;
   view = v; invalidate();
   if (srcT == null) playhead = 0;
-  else if (v === "map") playhead = srcT;
+  else if (v === "map") playhead = clamp(srcT, 0, tl().total);
   else { const r = tl(); const c = r.find(c => c.src != null && srcT >= c.src && srcT < c.src + c.dur); playhead = c ? c.t + (srcT - c.src) : 0; }
   $("#vMap").setAttribute("aria-pressed", v === "map"); $("#vShow").setAttribute("aria-pressed", v === "show");
   $("#laneLbl").textContent = v === "map" ? "Tempo map · original track" : "Show running order";
