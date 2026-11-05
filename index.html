@@ -226,7 +226,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v32</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v33</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -354,6 +354,7 @@ input[type=checkbox]{accent-color:var(--amber)}
     <div class="checks">
       <label><input type="checkbox" id="exClick" checked> <span>Click only <small>· mono 24-bit WAV</small></span></label>
       <label><input type="checkbox" id="exSplit" checked> <span>Click L / track R <small>· stereo WAV for IEM rigs</small></span></label>
+      <label><input type="checkbox" id="exMix" checked> <span>Track + click <small>· stereo WAV, click down the centre</small></span></label>
       <label><input type="checkbox" id="exTrack" checked> <span>Edited track <small>· stereo WAV, cuts and vamps applied</small></span></label>
       <label><input type="checkbox" id="exMidi" checked> <span>MIDI click + tempo map <small>· markers for QLab, Ableton, Logic</small></span></label>
     </div>
@@ -2316,7 +2317,7 @@ async function save(filename, data){
 }
 $("#exportBtn").onclick = async () => {
   if (!track || !S.arr.length) return toast("Nothing to export yet.");
-  const want = {click:$("#exClick").checked, split:$("#exSplit").checked, track:$("#exTrack").checked, midi:$("#exMidi").checked};
+  const want = {click:$("#exClick").checked, split:$("#exSplit").checked, track:$("#exTrack").checked, mix:$("#exMix").checked, midi:$("#exMidi").checked};
   if (!Object.values(want).some(Boolean)) return toast("Tick at least one file to export.");
   stopIfPlaying();
   await busy("Rendering show…");
@@ -2325,6 +2326,14 @@ $("#exportBtn").onclick = async () => {
     const files = [];
     if (want.click) files.push({name:`${base} - click.wav`, data:wav24([K], sr)});
     if (want.split){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:`${base} - click L track R.wav`, data:wav24([K, M], sr)}); }
+    if (want.mix){
+      // track in stereo as it is, click equally in both sides (-3 dB each, so it sits in the centre at the same loudness);
+      // the whole mix is turned down only if it would clip
+      const g = Math.SQRT1_2, ML = new Float32Array(L.length), MR = new Float32Array(L.length); let pk = 0;
+      for (let i = 0; i < ML.length; i++){ ML[i] = L[i] + K[i] * g; MR[i] = R[i] + K[i] * g; const a = Math.max(Math.abs(ML[i]), Math.abs(MR[i])); if (a > pk) pk = a; }
+      if (pk > 0.98){ const k = 0.98 / pk; for (let i = 0; i < ML.length; i++){ ML[i] *= k; MR[i] *= k; } }
+      files.push({name:`${base} - track and click.wav`, data:wav24([ML, MR], sr)});
+    }
     if (want.track) files.push({name:`${base} - track edited.wav`, data:wav24([L, R], sr)});
     if (want.midi) files.push({name:`${base} - click.mid`, data:midiFile(r)});
     files.push({name:`${base} - running order.txt`, data:new TextEncoder().encode(runSheet(r))});
