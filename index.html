@@ -236,7 +236,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v35</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v36</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -435,6 +435,18 @@ function tempoRows(o, extra){
     <div class="f"><span>Beat note</span><span class="notepick" role="radiogroup" aria-label="Note the BPM counts">${picks}</span></div>
     <div class="f"><span>BPM</span><input type="number" data-f="bpm" value="${fmtBpm(o.bpm)}" min="10" max="600" step="0.01" class="w6" aria-label="BPM">${extra || ""}</div>`;
 }
+// Feel: how many clicks a bar gets. "all" = every written beat, "groups" = one per group (6/8 in 2),
+// "half" = every other beat (4/4 in 2), "bar" = once a bar (in 1), "double" = twice a beat (2/2 in 4)
+function feels(o){
+  const out = [], n = o.num;
+  if (!simple(o)){ out.push(["groups", o.groups.length]); out.push(["all", n]); }
+  else { out.push(["all", n]); if (n % 2 === 0 && n >= 4) out.push(["half", n / 2]); if (n <= 6) out.push(["double", n * 2]); }
+  if (n > 1 && !out.some(f => f[1] === 1)) out.push(["bar", 1]);
+  return out.sort((a, b) => a[1] - b[1]);
+}
+const feelOk = (o, v) => feels(o).some(f => f[0] === v);
+const feelN = o => (feels(o).find(f => f[0] === o.clickOn) || [0, o.num])[1];
+const feelTxt = o => { const d = isCompound(o.num, o.den) ? "groups" : "all"; return o.clickOn && o.clickOn !== d ? "in " + feelN(o) : ""; };
 function meterCells(o, tag){
   const unitOpts = Object.keys(UNITS).map(u => `<option value="${u}" ${u === o.unit ? "selected" : ""}>${UNAME[u]}</option>`).join("");
   const grouped = !simple(o);
@@ -442,15 +454,15 @@ function meterCells(o, tag){
     sig: `<span class="sigbox"><input type="text" data-f="sig" value="${o.num}/${o.den}" style="width:4.6em" class="num" autocomplete="off" aria-label="Time signature" aria-haspopup="listbox" aria-expanded="false"><button type="button" class="sigdrop" tabindex="-1" aria-label="Show time signatures">▾</button></span>` +
          (grouped || o.den >= 8 ? ` <input type="text" data-f="groups" value="${o.groups.join("+")}" style="width:5.4em" class="num" title="Beat grouping, e.g. 2+2+3" aria-label="Beat grouping">` : ""),
     tempo: `<select data-f="unit" aria-label="BPM counts">${unitOpts}</select> = <input type="number" data-f="bpm" value="${fmtBpm(o.bpm)}" min="10" max="600" step="0.01" class="w6" aria-label="BPM">`,
-    clickOn: grouped ? `<select data-f="clickOn" aria-label="Click plays"><option value="all" ${o.clickOn === "all" ? "selected" : ""}>Every ${DSYM[o.den] || "note"}</option><option value="groups" ${o.clickOn === "groups" ? "selected" : ""}>Beats ${o.groups.join("+")}</option></select>` : `<span class="muted">Every ${DSYM[o.den] || "beat"}</span>`
+    clickOn: `<span class="seg" role="group" aria-label="Feel: clicks per bar">${feels(o).map(([v, k]) => `<button type="button" data-a="feel" data-v="${v}" aria-pressed="${o.clickOn === v}" title="${v === "groups" ? "One click per group: " + o.groups.join("+") : v === "half" ? "Every other beat" : v === "bar" ? "Once a bar" : v === "double" ? "Twice a beat" : "Every " + (UNAME[String(o.den)] || "beat").toLowerCase()}">In ${k}</button>`).join("")}</span>`
   };
 }
 // apply an edit to a meter field; returns false (with a toast) if invalid
 function editMeter(o, f, v){
   if (f === "sig"){ const sg = parseSig(v); if (!sg){ toast("Type a time signature like 4/4, 6/8 or 7/8."); return false; } if (sg.num !== o.num || sg.den !== o.den) setSig(o, sg); return true; }
-  if (f === "groups"){ const g = parseGroups(v, o.num); if (!g){ toast(`Grouping must add up to ${o.num}, e.g. ${defGroups(o.num, o.den).join("+")}.`); return false; } o.groups = g; if (simple(o)) o.clickOn = "all"; return true; }
+  if (f === "groups"){ const g = parseGroups(v, o.num); if (!g){ toast(`Grouping must add up to ${o.num}, e.g. ${defGroups(o.num, o.den).join("+")}.`); return false; } o.groups = g; if (!feelOk(o, o.clickOn)) o.clickOn = simple(o) ? "all" : "groups"; return true; }
   if (f === "unit"){ if (UNITS[v]) o.unit = v; return true; }
-  if (f === "clickOn"){ o.clickOn = v === "groups" ? "groups" : "all"; return true; }
+  if (f === "clickOn"){ if (feelOk(o, v)) o.clickOn = v; return true; }
   if (f === "bpm"){ o.bpm = clamp(+v || o.bpm, 10, 600); return true; }
   return false;
 }
@@ -470,7 +482,7 @@ function normMeter(o){
   delete o.beats;
   if (!UNITS[o.unit]) o.unit = defUnit(o.num, o.den);
   if (!Array.isArray(o.groups) || o.groups.reduce((a, b) => a + b, 0) !== o.num) o.groups = defGroups(o.num, o.den);
-  if (o.clickOn !== "groups" && o.clickOn !== "all") o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
+  if (!["groups", "all", "half", "bar", "double"].includes(o.clickOn) || (o.clickOn !== "all" && !feelOk(o, o.clickOn))) o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
   return o;
 }
 // vamp / safety: e.vt is what it's called; e.open = loops until the MD's GO; e.safety = plays a set number of times
@@ -499,6 +511,15 @@ function timeMap(o, bars){
   const clicks = [];
   for (let b = 0; b < bars; b++){
     const arr = []; let pos = 0, beatNo = 0;
+    if (o.clickOn === "half" || o.clickOn === "bar"){
+      const st = o.clickOn === "bar" ? n : 2;
+      for (let k = 0; k < n; k += st){ const q = b*n + k; arr.push([pt[q] - barT[b], k === 0 ? "acc" : "beat", ++beatNo, pt[q + st] - pt[q], q, st]); }
+      clicks.push(arr); continue;
+    }
+    if (o.clickOn === "double"){
+      for (let k = 0; k < n; k++){ const q = b*n + k, l = (pt[q + 1] - pt[q]) / 2; arr.push([pt[q] - barT[b], k === 0 ? "acc" : "beat", ++beatNo, l, q, 1]); arr.push([pt[q] - barT[b] + l, "beat", ++beatNo, l, q, 1]); }
+      clicks.push(arr); continue;
+    }
     o.groups.forEach((g, gi) => {
       if (o.clickOn === "groups"){ const q = b*n + pos; arr.push([pt[q] - barT[b], gi === 0 ? "acc" : "beat", ++beatNo, pt[q + g] - pt[q], q, g]); }
       else for (let k = 0; k < g; k++){ const q = b*n + pos + k; arr.push([pt[q] - barT[b], pos + k === 0 ? "acc" : (k === 0 || simple(o)) ? "beat" : "sub", ++beatNo, pt[q + 1] - pt[q], q, 1]); }
@@ -517,6 +538,8 @@ const simple = o => o.groups.every(g => g === 1);
 // main clicks in one bar: [time, kind, beatNo]
 function barClicks(o){
   const p = pulse(o), out = []; let pos = 0, beatNo = 0;
+  if (o.clickOn === "half" || o.clickOn === "bar"){ const st = o.clickOn === "bar" ? o.num : 2; for (let k = 0; k < o.num; k += st) out.push([k * p, k === 0 ? "acc" : "beat", ++beatNo, st * p]); return out; }
+  if (o.clickOn === "double"){ for (let k = 0; k < o.num; k++){ out.push([k * p, k === 0 ? "acc" : "beat", ++beatNo, p / 2]); out.push([(k + .5) * p, "beat", ++beatNo, p / 2]); } return out; }
   o.groups.forEach((g, gi) => {
     if (o.clickOn === "groups"){ out.push([pos * p, gi === 0 ? "acc" : "beat", ++beatNo, g * p]); }
     else for (let k = 0; k < g; k++) out.push([(pos + k) * p, pos + k === 0 ? "acc" : (k === 0 || simple(o)) ? "beat" : "sub", ++beatNo, p]);
@@ -524,7 +547,7 @@ function barClicks(o){
   });
   return out;
 }
-const sigTxt = o => `${o.num}/${o.den}${simple(o) || isCompound(o.num, o.den) && o.groups.every(g => g === 3) ? "" : " (" + o.groups.join("+") + ")"}`;
+const sigTxt = o => `${o.num}/${o.den}${simple(o) || isCompound(o.num, o.den) && o.groups.every(g => g === 3) ? "" : " (" + o.groups.join("+") + ")"}${o.clickOn && feelTxt(o) ? " " + feelTxt(o) : ""}`;
 const tempoTxt = o => `${USYM[o.unit]} = ${fmtBpm(o.bpm)}` + (hasRamp(o) ? ` → ${fmtBpm(o.rampTo)} ${o.rampTo < o.bpm ? "rit." : "accel."}` : "");
 function fmtT(t){ t = Math.max(0, t); const m = Math.floor(t/60); const s = t - m*60; return m + ":" + (s < 10 ? "0" : "") + s.toFixed(1); }
 function parseTime(v){ const m = String(v).trim().match(/^(?:(\d+):)?(\d+(?:\.\d+)?)$/); if (!m) return null; return (m[1] ? +m[1] * 60 : 0) + +m[2]; }
@@ -848,7 +871,7 @@ function beatsOf(c){
     for (const [t0, k0, , len, , g] of tm.clicks[b]){
       const k = k0 === "acc" && !S.set.accent ? "beat" : k0;
       // subdivide each click: simple meters by the setting; grouped clicks fill in their pulses
-      const n = c.clickOn === "groups" ? (sub > 1 ? g : 1) : (simple(c) ? sub : 1);
+      const n = c.clickOn === "groups" ? (sub > 1 ? g : 1) : (c.clickOn === "half" || c.clickOn === "bar") ? (sub > 1 ? g : 1) : (simple(c) ? sub : 1);
       for (let j = 0; j < n; j++){
         const t = tb + t0 + j * len / n; if (t >= c.dur - 1e-6) return out;
         out.push([t, j > 0 ? "sub" : k]);
@@ -1290,7 +1313,7 @@ function renderMapInsp(){
       <label class="f"><span>Bars</span><input type="number" data-f="bars" value="${s.bars}" min="1" step="1"><small class="num">mm. ${a}–${a + s.bars - 1}</small></label></div>
     <div class="group"><h3>Meter</h3>
       <div class="f"><span>Time signature</span>${mc.sig}</div>
-      <div class="f"><span>Click plays</span>${mc.clickOn}</div></div>
+      <div class="f"><span>Feel</span>${mc.clickOn}</div></div>
     <div class="group"><h3>Tempo</h3>
       ${tempoRows(s, `<button class="btn sm" data-a="x2" title="Double the tempo">×2</button><button class="btn sm" data-a="h2" title="Halve the tempo">÷2</button>`)}
       <div class="btns"><button class="btn sm" data-a="detect">Detect from audio</button></div>
@@ -1320,7 +1343,7 @@ function mapClick(e){
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "off"){
     const k = a.dataset.off;
-    const bl = barDur(s) / barClicks(s).filter(x => x[1] !== "sub").length;
+    const bl = barDur(s) / barClicks({...s, clickOn: isCompound(s.num, s.den) ? "groups" : "all"}).filter(x => x[1] !== "sub").length;   // a written beat, whatever the feel
     const d = k === "beat" ? bl : k === "-beat" ? -bl : +k;
     computeSrc(); const t = Math.max(0, s.start + d);
     mut(() => { if (i === 0) S.offset = +t.toFixed(4); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000; pin(s.id, t); });
@@ -1332,6 +1355,7 @@ function mapClick(e){
   }
   if (act === "lineup") lineUp(s);
   if (act === "unit") mut(() => editMeter(s, "unit", a.dataset.u));
+  if (act === "feel") mut(() => editMeter(s, "clickOn", a.dataset.v));
   if (act === "detect") detectSection(s);
   if (act === "insA") insertSection(s, "above");
   if (act === "insB") insertSection(s, "below");
@@ -1573,7 +1597,7 @@ function renderArr(){
     const fit = r.fit && r.fit[i];
     if (fit && fit.cut > 0.01) tags.push(`<span class="badge" style="background:rgba(255,107,94,.16);color:var(--danger)" title="Not enough room in the recording before ${esc(fit.next || "the next section")}">doesn't fit</span>`);
     return `<div class="row${sel}${e.skip ? " skipped" : ""}" data-i="${i}">${grip}<span class="mark${vtOf(e) === "safety" && !e.skip ? " safety" : isV ? " vamp" : ""}">${esc(s.label)}</span>
-      <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${tempoHTML(s)}</div></div>
+      <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${tempoHTML(s)}${feelTxt(s) ? " · " + feelTxt(s) : ""}</div></div>
       <div class="tags">${tags.join("")}</div></div>`;
   }).join("") || `<div class="empty">Nothing in the running order yet. Add a section above.</div>`;
   $("#addSel").innerHTML = S.sections.map(s => `<option value="${s.id}">${esc(s.label)} · ${esc(s.name || "Section " + s.label)}</option>`).join("");
@@ -1595,7 +1619,7 @@ function renderShowInsp(span){
       <div class="group"><h3>Click only</h3><p class="note">Plays click with no track. ${sp}.</p>
         <label class="f"><span>Bars</span><input type="number" data-f="bars" value="${e.bars}" min="1"></label>
         <div class="f"><span>Time signature</span>${mc.sig}</div>
-        ${simple(e) ? "" : `<div class="f"><span>Click plays</span>${mc.clickOn}</div>`}
+        <div class="f"><span>Feel</span>${mc.clickOn}</div>
         ${tempoRows(e)}</div>${edit}</div>`;
     return;
   }
@@ -1639,6 +1663,7 @@ function showClick(ev){
   if (a && a.dataset.a === "grip") return;
   if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderAll(); } return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
+  if (a.dataset.a === "feel"){ const en = S.arr[i]; mut(() => editMeter(en, "clickOn", a.dataset.v)); return; }
   if (a.dataset.a === "ends"){ const en = S.arr[i]; mut(() => { en.vt = vtOf(en) || "vamp"; en.open = a.dataset.m === "go"; en.safety = !en.open; }); return; }
   if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => {
     en.skip = m === "skip"; if (m === "skip") return;
