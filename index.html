@@ -226,7 +226,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v29</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v30</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -2358,9 +2358,19 @@ function qlabPlan(){
   let n = 0; const num = () => (n++ === 0 ? base : base + "." + (n - 1));
   const cues = [];
   segs.forEach((seg, si) => {
-    const list = seg.map(c => ({...c}));
-    const first = list.find(c => c.kind === "sec" || c.kind === "click");
-    if (si > 0 && S.set.countIn > 0 && first){
+    let list = seg.map(c => ({...c})), trimmed = false;
+    const music = c => c.kind === "sec" || c.kind === "click";
+    if (!qlFOH()){
+      // click only: the cue starts where the click comes in (with the count-in), not at the top of the song,
+      // and stops after the last click. Nothing in front of the click to drift out of time.
+      const fi = list.findIndex(c => music(c) && c.click);
+      if (fi < 0) return;                                   // no click in this part at all: no cue
+      if (list.slice(0, fi).some(music)){ list = list.slice(fi); trimmed = true; }
+      let li = list.length - 1; while (li > 0 && !(music(list[li]) && list[li].click)) li--;
+      if (li < list.length - 1){ list = list.slice(0, li + 1); list.push({kind:"tail", dur:1.5, src:null, click:false, name:"Ring-out"}); }
+    }
+    const first = list.find(music);
+    if ((si > 0 || trimmed) && S.set.countIn > 0 && first){
       const ci = steady(first), tm = timeMap(ci, S.set.countIn);
       list.unshift({...ci, kind:"lead", tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:""});
     }
@@ -2380,8 +2390,8 @@ function qlabPlan(){
     const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? list[0].bars : 0;
     const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
     cues.push({type:"audio", num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
-      what: si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
-      notes: (si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
+      what: trimmed ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
+      notes: (trimmed ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
     let sk = 0;
     for (const v of vamps){
       if (v.vt === "safety"){
