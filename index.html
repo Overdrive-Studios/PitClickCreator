@@ -92,7 +92,7 @@ label.file.disabled{opacity:.45;pointer-events:none}
 .lane{overflow-x:auto;overflow-y:hidden;position:relative}
 .laneinner{position:relative;height:178px}
 .laneinner{touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
-.laneinner canvas{display:block}
+.laneinner canvas{display:block;position:absolute;top:0;left:0}
 .laneinner.dragging{cursor:grabbing}
 .ph{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);transform:translateX(-1px);cursor:grab}
 .ph::before{content:"";position:absolute;top:0;left:-7px;border:8px solid transparent;border-top:11px solid var(--amber)}
@@ -201,7 +201,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v16</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v17</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -235,7 +235,7 @@ body.locked .pane .card{opacity:.75}
     <div class="lanehead">
       <span class="lbl" id="laneLbl">Show running order</span>
       <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · pinch to zoom</span></span>
-      <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="1" max="24" step="0.1" value="1" style="width:140px"></label>
+      <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="0" max="100" step="0.1" value="0" style="width:140px" aria-label="Zoom"></label>
     </div>
     <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
   </section>
@@ -758,16 +758,20 @@ function pump(){
   while (P.when < c.currentTime + 0.3){
     const ch = P.live[P.idx];
     if (!ch){ if (P.endAt == null) P.endAt = P.when; break; }
-    schedule(ch, P.when, P.within);
-    P.sched.push({ch, at:P.when - P.within, pass:P.passNo});
+    // a vamp decides whether to go round again at the moment the next pass would start,
+    // so GO pressed at any point during a pass leaves at the end of that same pass
+    if (ch.open && P.passNo > 0 && P.go){ P.go = false; P.idx++; P.passNo = 0; continue; }
+    const nodes = schedule(ch, P.when, P.within);
+    P.sched.push({ch, at:P.when - P.within, start:P.when, pass:P.passNo, nodes});
     if (P.sched.length > 6) P.sched.shift();
     P.when += ch.dur - P.within; P.within = 0;
-    if (ch.open && !P.go){ P.passNo++; }
-    else { if (ch.open) P.go = false; P.idx++; P.passNo = 0; }
+    if (ch.open) P.passNo++;
+    else { P.idx++; P.passNo = 0; }
   }
 }
 function schedule(ch, when, within){
-  const c = actx;
+  const c = actx, made = [];
+  const track_ = n => { const set = P.nodes; set.add(n); made.push(n); n.onended = () => set.delete(n); };
   const tb = trackBuf();
   if (ch.src != null && tb){
     let sp = ch.src + within, w = when, d = ch.dur - within;
@@ -788,6 +792,7 @@ function schedule(ch, when, within){
     const n = c.createBufferSource(); n.buffer = cb[k]; n.connect(P.cOut);
     n.start(when + t - within); track_(n);
   }
+  return made;
 }
 function track_(n){ const set = P.nodes; set.add(n); n.onended = () => set.delete(n); }
 function stop(){
@@ -821,10 +826,17 @@ function loop(){
 function goPress(){
   if (!P){ return; }
   P.go = true;
-  const lp = livePos();
-  if (lp && lp.ch && lp.ch.open && P.idx === P.live.indexOf(lp.ch) + 1 && P.passNo === 0){ /* already leaving */ }
-  // if the next pass of this vamp is already scheduled but not started, it will still play; most passes are longer than the 0.3s lookahead
-  updateReadout(lp);
+  // GO in the last moments of a pass: the next pass may already be queued. Pull it back out.
+  const now = actx.currentTime;
+  const k = P.sched.findIndex(e => e.ch.open && e.pass > 0 && e.at > now + 0.005);
+  if (k >= 0){
+    const e = P.sched[k];
+    for (const x of P.sched.slice(k)) for (const n of x.nodes){ try { n.stop(); } catch(err){} P.nodes.delete(n); }
+    P.sched.splice(k);
+    P.idx = P.live.indexOf(e.ch); P.passNo = e.pass; P.when = e.at; P.within = 0;
+    pump();
+  }
+  updateReadout(livePos());
 }
 
 /* ---------------- readout & lane ---------------- */
@@ -878,12 +890,16 @@ function drawLane(){
   if (!S) return;
   const r = tl(); const lane = $("#lane"), cv = $("#cv");
   const vw = Math.max(200, lane.clientWidth); const total = Math.max(r.total, 1);
-  const W = Math.min(Math.round(vw * zoom), 30000), H = 178;
+  const W = Math.round(vw * zoom), H = 178;
   pps = W / total;
-  const dpr = Math.min(window.devicePixelRatio || 1, 2, 32000 / W);
-  cv.width = Math.floor(W * dpr); cv.height = Math.floor(H * dpr); cv.style.width = W + "px"; cv.style.height = H + "px";
+  // only the visible slice is drawn, so zoom can go right down to sample level
   $("#laneInner").style.width = W + "px";
-  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const sl = clamp(lane.scrollLeft, 0, Math.max(0, W - vw)), X1 = sl + vw;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (cv.width !== Math.floor(vw * dpr) || cv.height !== Math.floor(H * dpr)){ cv.width = Math.floor(vw * dpr); cv.height = Math.floor(H * dpr); cv.style.width = vw + "px"; cv.style.height = H + "px"; }
+  cv.style.left = sl + "px";
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, -sl * dpr, 0); g.clearRect(sl, 0, vw, H);
+  const vis = c => (c.t + c.dur) * pps >= sl - 2 && c.t * pps <= X1 + 2;
   const C = {ink:css("--ink"), muted:css("--muted"), line:css("--line"), wave:css("--wave"), band:css("--band"), amber:css("--amber"), amberS:css("--amber-soft"), vamp:css("--vamp"), vampS:css("--vamp-soft"), panel:css("--panel"), grid:css("--grid")};
   const top = 40, bot = H - 6, mid = (top + bot) / 2, half = (bot - top) / 2;
   // bands
@@ -894,21 +910,28 @@ function drawLane(){
     else if (c.kind === "click") g.fillStyle = C.amberS;
     else if (c.kind === "lead") g.fillStyle = C.band;
     else g.fillStyle = "transparent";
+    if (!vis(c)) return;
     if (g.fillStyle !== "transparent" && g.fillStyle !== "rgba(0, 0, 0, 0)") g.fillRect(x0, 0, x1 - x0, H);
     if (view === "map" && c.sid && c.sid === selSec){ g.fillStyle = C.amberS; g.fillRect(x0, 0, x1 - x0, H); }
   });
   // waveform
   if (track && track.peaks){
     const pk = track.peaks, R = pk.rate; g.fillStyle = C.wave;
+    const raw = pps > R / 2, sr = track.sr, c0 = track.ch[0], c1 = track.ch[1] || c0, gain = pk.gain || 1;
     let ci = 0;
-    for (let x = 0; x < W; x++){
+    for (let x = Math.floor(sl); x < X1; x++){
       const t = x / pps;
       while (ci < r.length - 1 && t >= r[ci].t + r[ci].dur) ci++;
       const c = r[ci]; if (!c || c.src == null) continue;
       const st = c.src + (t - c.t); if (st < 0 || st >= track.dur) continue;
-      const i0 = Math.floor(st * R), i1 = Math.max(i0 + 1, Math.floor((st + 1/pps) * R));
       let mx = 0, mn = 0;
-      for (let i = i0; i < i1 && i < pk.max.length; i++){ if (pk.max[i] > mx) mx = pk.max[i]; if (pk.min[i] < mn) mn = pk.min[i]; }
+      if (raw){   // zoomed in: read the samples themselves
+        const i0 = Math.floor(st * sr), i1 = Math.max(i0 + 1, Math.min(track.len, Math.floor((st + 1/pps) * sr)));
+        for (let i = i0; i < i1; i++){ const v = (c0[i] + c1[i]) * 0.5 * gain; if (v > mx) mx = v; if (v < mn) mn = v; }
+      } else {
+        const i0 = Math.floor(st * R), i1 = Math.max(i0 + 1, Math.floor((st + 1/pps) * R));
+        for (let i = i0; i < i1 && i < pk.max.length; i++){ if (pk.max[i] > mx) mx = pk.max[i]; if (pk.min[i] < mn) mn = pk.min[i]; }
+      }
       const y0 = mid - mx * half, y1 = mid - mn * half;
       g.fillRect(x, y0, 1, Math.max(1, y1 - y0));
     }
@@ -917,10 +940,12 @@ function drawLane(){
   g.font = "500 10px " + css("--f-num"); g.textBaseline = "top";
   let lastLbl = -1e9;
   r.forEach(c => {
-    if (!c.tm || !(c.kind === "sec" || c.kind === "click" || c.kind === "lead")) return;
+    if (!c.tm || !(c.kind === "sec" || c.kind === "click" || c.kind === "lead") || !vis(c)) return;
     const tm = c.tm, b0 = c.barOff || 0, base = tm.barT[b0], from = c.clickFrom || 0;
     for (let b = b0; b < tm.bars; b++){
       const tb = c.t + from + tm.barT[b] - base; if (tb >= c.t + c.dur - 1e-6) break;
+      if (tb * pps > X1 + 2) break;
+      if ((c.t + from + tm.barT[b + 1] - base) * pps < sl - 30) continue;
       const x = Math.round(tb * pps) + 0.5;
       const bc = tm.clicks[b].filter(z => z[1] !== "sub");
       g.fillStyle = C.grid; g.fillRect(Math.round(tb * pps) - 1, 24, 2, H - 24);
@@ -937,9 +962,10 @@ function drawLane(){
   r.forEach(c => {
     if (!(c.kind === "sec" || c.kind === "click")) return;
     if (c.pass > 0 && !(c.passes > 1)) return;
-    const x = Math.round(c.t * pps) + 0.5, w = c.dur * pps;
-    const isV = c.open || c.passes > 1;
-    g.fillStyle = isV ? C.vamp : C.ink; g.fillRect(x - 1, 0, 2, H);
+    if (!vis(c)) return;
+    const x0 = Math.round(c.t * pps) + 0.5, isV = c.open || c.passes > 1;
+    g.fillStyle = isV ? C.vamp : C.ink; g.fillRect(x0 - 1, 0, 2, H);
+    const x = Math.max(x0, sl), w = (c.t + c.dur) * pps - x;
     if (c.pass > 0){
       if (w > 30){ g.font = "600 11px " + css("--f-num"); g.fillStyle = C.vamp; g.fillText("×" + (c.pass + 1), x + 5, 12); }
       return;
@@ -966,7 +992,7 @@ function drawLane(){
 }
 // drag anywhere on the lane (or the playhead) to scrub; playback resumes from where you let go
 let drag = null, secDrag = null;
-function laneT(e){ const r = $("#cv").getBoundingClientRect(); return clamp((e.clientX - r.left) / pps, 0, tl().total); }
+function laneT(e){ const r = $("#laneInner").getBoundingClientRect(); return clamp((e.clientX - r.left) / pps, 0, tl().total); }
 // in the tempo map, grab a section's start line to slide it (and everything after it) to the audio
 function secEdgeAt(e){
   if (view !== "map" || locked) return null;
@@ -1304,7 +1330,8 @@ function splitAtPlayhead(){
   const L = nextLabel();
   mut(() => {
     const n = {id:uid(), label:L, name:s.name ? s.name + " (cont.)" : "", bars:s.bars - k, ...meterOf(s), groups:s.groups.slice(), nudge:0, mute:s.mute};
-    s.bars = k; s.rampTo = 0; s.rampBars = 0;   // any ramp stays with the later half S.sections.splice(S.sections.indexOf(s) + 1, 0, n);
+    s.bars = k; s.rampTo = 0; s.rampBars = 0;   // any ramp stays with the later half
+    S.sections.splice(S.sections.indexOf(s) + 1, 0, n);
     const out = [];
     for (const e of S.arr){
       if (e.kind === "sec" && e.sec === s.id){
@@ -1471,16 +1498,18 @@ $("#homeBtn").onclick = () => { const was = !!P; stop(); playhead = 0; updateRea
 $("#goBtn").onclick = goPress;
 $("#undoBtn").onclick = undo;
 $("#lockBtn").onclick = () => { locked = !locked; try { localStorage.setItem("pitclick:locked", locked ? "1" : "0"); } catch(e){} renderAll(); toast(locked ? "Show locked" : "Unlocked. You can edit again."); };
-$("#zoom").addEventListener("input", e => setZoom(+e.target.value));
+$("#zoom").addEventListener("input", e => setZoom(sliderToZ(+e.target.value)));
 // zoom keeping the point at screen x (relative to the lane) fixed; pinch and ctrl+wheel use this
-const ZMAX = () => Math.max(1, Math.min(200, 30000 / Math.max(200, $("#lane").clientWidth)));
+const ZMAX = () => Math.max(2, 4000 * Math.max(1, tl().total) / Math.max(200, $("#lane").clientWidth));
+const zToSlider = z => 100 * Math.log(z) / Math.log(ZMAX());
+const sliderToZ = v => Math.exp(v / 100 * Math.log(ZMAX()));
 function setZoom(z, anchorX){
   const lane = $("#lane"); z = clamp(z, 1, ZMAX());
   if (anchorX == null) anchorX = clamp(playhead * pps - lane.scrollLeft, 0, lane.clientWidth) || lane.clientWidth / 2;
   const t = (lane.scrollLeft + anchorX) / pps;
   zoom = z; drawLane(); saveLocal();
   lane.scrollLeft = Math.max(0, t * pps - anchorX);
-  const zi = $("#zoom"); zi.max = Math.max(24, Math.ceil(ZMAX())); zi.value = z;
+  const zi = $("#zoom"); zi.max = 100; zi.value = zToSlider(z);
 }
 let zPend = null;
 function queueZoom(factor, x){
@@ -1499,6 +1528,7 @@ let gz = null;
 $("#lane").addEventListener("gesturestart", e => { e.preventDefault(); gz = {z:zoom, x:laneX(e)}; });
 $("#lane").addEventListener("gesturechange", e => { if (!gz) return; e.preventDefault(); const f = gz.z * e.scale / zoom; queueZoom(f, gz.x); });
 $("#lane").addEventListener("gestureend", e => { gz = null; });
+$("#lane").addEventListener("scroll", () => { if (drawLane.raf) return; drawLane.raf = requestAnimationFrame(() => { drawLane.raf = 0; drawLane(); }); }, {passive:true});
 window.addEventListener("resize", () => { clearTimeout(drawLane.h); drawLane.h = setTimeout(drawLane, 120); });
 
 /* taps */
@@ -1740,7 +1770,7 @@ function computePeaks(tr){
   }
   let pk = 0; for (let b = 0; b < n; b++) pk = Math.max(pk, mx[b], -mn[b]);
   const g = pk > 0 ? 0.95 / pk : 1; for (let b = 0; b < n; b++){ mx[b] *= g; mn[b] *= g; }
-  tr.peaks = {max:mx, min:mn, rate:R};
+  tr.peaks = {max:mx, min:mn, rate:R, gain:g};
 }
 async function decodeTrack(ab, fileName){
   const buf = await new Promise((res, rej) => ac().decodeAudioData(ab, res, rej));
@@ -2002,8 +2032,9 @@ async function boot(){
     selSec = ses.selSec || null; selEnt = ses.selEnt || null;
     tab = ["map","show","out"].includes(ses.tab) ? ses.tab : (ses.view === "map" ? "map" : "show");
     setViewSilent(tab === "map" ? "map" : "show");
-    zoom = clamp(+ses.zoom || 1, 1, 200); $("#zoom").max = Math.max(24, Math.ceil(zoom)); $("#zoom").value = zoom;
+    zoom = clamp(+ses.zoom || 1, 1, 1e6);
     renderAll(); playhead = clamp(+ses.playhead || 0, 0, tl().total); updateReadout();
+    zoom = clamp(zoom, 1, ZMAX()); $("#zoom").value = zToSlider(zoom); drawLane();
     if (ses.scroll) $("#lane").scrollLeft = ses.scroll;
   };
   if (ses && !ses.demo){
