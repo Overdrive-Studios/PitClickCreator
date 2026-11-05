@@ -118,6 +118,16 @@ input[type=range]{width:100%;accent-color:var(--amber)}
 /* workspace */
 .work{display:grid;grid-template-columns:330px minmax(0,1fr);gap:10px;align-items:start}
 @media (max-width:980px){.work{grid-template-columns:minmax(0,1fr)}.inspector{order:2;position:static!important;max-height:none!important}}
+.songs{border-bottom:1px solid var(--line)}
+.songs-head{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.songs-head small{flex:1;color:var(--muted);font-size:11.5px}
+#songList .row{grid-template-columns:auto auto minmax(0,1fr) auto;padding:6px 8px 6px 4px}
+#songList .row .mark{min-width:22px;text-align:center}
+#songList .flow{font-size:11px;padding:2px 7px}
+#songList .flow[aria-pressed="true"]{background:var(--vamp);color:var(--on-ink);border-color:var(--vamp)}
+#songList .rm{font-size:13px;padding:1px 7px;color:var(--muted)}
+#songList .segue{font:11px var(--f-num);color:var(--vamp);padding:0 12px 4px 46px;margin-top:-2px}
+#songList .empty{padding:2px 12px 12px;font-size:12px}
 .inspector{background:var(--panel);border:1px solid var(--line);border-radius:10px;position:sticky;top:10px;max-height:calc(100vh - 20px);overflow:auto;min-width:0}
 .insp-title{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);background:#2A2A2E;position:sticky;top:0;z-index:2}
 .arrange{display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -226,8 +236,8 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v34</span></h1><span class="trk" id="trkName">Demo track</span></div>
-      <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
+      <div class="brand"><h1>Pit Click <span class="ver">v35</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
     <div class="ctl-mid">
@@ -258,6 +268,10 @@ input[type=checkbox]{accent-color:var(--amber)}
 
   <main class="work">
     <aside class="inspector" aria-label="Inspector">
+      <div class="songs" id="songsBox">
+        <div class="songs-head"><span class="lbl">Songs</span><small id="songsHint"></small><label class="btn sm file" id="songAdd">+ Add<input type="file" id="songIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label></div>
+        <div id="songList"></div>
+      </div>
       <div class="insp-title"><span class="lbl">Inspector</span><small id="inspHint">Click a row or a section on the timeline</small></div>
       <div id="showInsp"></div>
       <div id="mapInspWrap"><div class="insp-sub" id="mapInspSub" hidden>Section · tempo and meter</div><div id="mapInsp"></div></div>
@@ -342,7 +356,8 @@ input[type=checkbox]{accent-color:var(--amber)}
       <option value="mix">Track + click together: click in the centre</option></select></label>
   </div>
   <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
-  <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
+  <div class="bar"><button class="btn primary" id="qlabBtn">Export this song</button><button class="btn" id="qlabShowBtn" hidden>Export whole show</button></div>
+  <p class="sub" id="qlShowNote" hidden></p>
   <ol class="steps-mini">
     <li>Unzip into your show folder and keep the files together.</li>
     <li>Open QLab 5 and your workspace, and click the cue these should go after.</li>
@@ -1215,7 +1230,7 @@ function renderAll(){
   invalidate();
   // in the Show view the inspector shows the selected entry AND the section it plays, so nothing needs another page
   if (S && view === "show"){ const e = S.arr.find(x => x.id === selEnt) || S.arr[0]; if (e && e.kind === "sec") selSec = e.sec; }
-  renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout(); syncInspector();
+  renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout(); syncInspector(); renderSongs();
   // remember which controls are disabled for their own reasons, so unlocking doesn't enable them
   // rows are rebuilt each render: remember which of their controls are disabled for their own reasons
   document.querySelectorAll("#mapInsp [disabled], #showInsp [disabled]").forEach(el => el.dataset.lk = "1");
@@ -2138,7 +2153,7 @@ function setViewSilent(v){
   syncViewUI();
   $("#laneLbl").textContent = v === "map" ? "Original recording" : "Show";
 }
-$("#fileIn").addEventListener("change", e => { loadFile(e.target.files[0]); e.target.value = ""; });
+$("#fileIn").addEventListener("change", e => { addSongs(e.target.files); e.target.value = ""; });
 let dragN = 0;
 window.addEventListener("dragenter", e => { if ([...e.dataTransfer.types].includes("Files")){ dragN++; $("#drop").hidden = false; } });
 window.addEventListener("dragleave", () => { if (--dragN <= 0){ dragN = 0; $("#drop").hidden = true; } });
@@ -2197,7 +2212,7 @@ function makeDemo(){
   S = {offset, sections, set:{...DEFAULT_SET}, arr: sections.map(s => ({id:uid(), kind:"sec", sec:s.id, repeat:s.name === "Vamp" ? 3 : 1, open:s.name === "Vamp", skipStart:0, skipEnd:0}))};
   $("#trkName").textContent = "Demo track (example) · " + fmtT(track.dur);
 }
-$("#demoBtn").onclick = () => { stopIfPlaying(); makeDemo(); setTimeout(saveNow, 0); hist.length = 0; playhead = 0; selSec = null; setViewSilent("show"); renderAll(); toast("Demo loaded: the vamp waits for GO, the waltz and tag have rits, and there's a hold before the tag."); };
+$("#demoBtn").onclick = () => { stopIfPlaying(); saveNow(); SHOW.cur = null; saveShow(); makeDemo(); setTimeout(saveNow, 0); hist.length = 0; playhead = 0; selSec = null; setViewSilent("show"); renderAll(); toast("Demo loaded: the vamp waits for GO, the waltz and tag have rits, and there's a hold before the tag."); };
 
 /* ---------------- export ---------------- */
 let dlP = null;
@@ -2363,7 +2378,9 @@ const qlRouting = () => qlMix() ? "Track in stereo with the click down the centr
 const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? track.name : "Demo song");
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
-function qlabPlan(){
+function qlabPlan(o = {}){
+  // o.joinIn: the song before flows into this one (start right on bar 1, no count-in, nothing trimmed)
+  // o.joinOut: this song flows into the next (end exactly on its last bar line, no ring-out)
   const r = build("show", true).filter(c => !(c.open && c.pass > 0));   // set-count repeats stay in the audio as written
   const segs = []; let cur = [];
   // Click only: when the click stops for a while (dialogue, free time, sections with no click) and then comes
@@ -2377,13 +2394,16 @@ function qlabPlan(){
     if (clicks){ heard = true; quiet = 0; } else if (c.kind !== "lead") quiet += c.dur;
   }
   if (cur.length) segs.push(cur);
-  const song = qlSong(), base = ascii(S.set.qlNum || "1") || "1";
+  const song = o.song || qlSong(), base = o.base || ascii(S.set.qlNum || "1") || "1";
   let n = 0; const num = () => (n++ === 0 ? base : base + "." + (n - 1));
   const cues = [];
   segs.forEach((seg, si) => {
     let list = seg.map(c => ({...c})), trimmed = false;
     const music = c => c.kind === "sec" || c.kind === "click";
-    if (!qlHasTrack()){
+    const jIn = !!o.joinIn && si === 0, jOut = !!o.joinOut && si === segs.length - 1;
+    if (jIn){ const f0 = list.findIndex(music); if (f0 > 0) list = list.slice(f0); }        // straight onto bar 1
+    if (jOut){ while (list.length > 1 && !music(list[list.length - 1])) list.pop(); }      // end on the last bar line
+    if (!qlHasTrack() && !jIn && !jOut){
       // click only: the cue starts where the click comes in (with the count-in), not at the top of the song,
       // and stops after the last click. Nothing in front of the click to drift out of time.
       const fi = list.findIndex(c => music(c) && c.click);
@@ -2396,7 +2416,7 @@ function qlabPlan(){
       if (li < list.length - 1){ list = list.slice(0, li + 1); list.push({kind:"tail", dur:1.5, src:null, click:false, name:"Ring-out"}); }
     }
     const first = list.find(music);
-    if ((si > 0 || trimmed) && S.set.countIn > 0 && first){
+    if ((si > 0 || trimmed) && !jIn && S.set.countIn > 0 && first){
       const ci = steady(first), tm = timeMap(ci, S.set.countIn);
       list.unshift({...ci, kind:"lead", tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:""});
     }
@@ -2415,20 +2435,20 @@ function qlabPlan(){
     const part = segs.length > 1 ? ` (part ${si + 1})` : "";
     const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? list[0].bars : 0;
     const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
-    cues.push({type:"audio", num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
+    cues.push({type:"audio", joinPrev:jIn, joinNext:jOut, song, num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
       what: trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
       notes: (trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
     let sk = 0;
     for (const v of vamps){
       if (v.vt === "safety"){
         const nm = `End safety ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
-        cues.push({type:"devamp", safety:true, num:num(), target:aNum, name:nm, passes:v.passes,
+        cues.push({type:"devamp", safety:true, song, num:num(), target:aNum, name:nm, passes:v.passes,
           what:`${nm} (${bars}, rehearsed ${v.passes} time${v.passes > 1 ? "s" : ""}). Loops until this GO, on the MD's cue. It finishes the pass, then carries on.`,
           notes:`Safety ${bars} loops until this GO (rehearsal track plays it ${v.passes} time${v.passes > 1 ? "s" : ""}). Press on the MD's cue: during the first pass to skip it. It finishes the pass it's on, then the song carries on in time.`});
         continue;
       }
       const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
-      cues.push({type:"devamp", num:num(), target:aNum, name:nm, passes:v.passes, what:`${nm} (${bars}${v.passes > 1 ? `, rehearsed ${v.passes} times` : ""}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
+      cues.push({type:"devamp", song, num:num(), target:aNum, name:nm, passes:v.passes, what:`${nm} (${bars}${v.passes > 1 ? `, rehearsed ${v.passes} times` : ""}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
         notes:`Vamp ${bars} loops until this GO. Press it while the vamp is looping, on the MD's cue. It finishes the current pass, then the song carries on.`});
     }
   });
@@ -2580,7 +2600,8 @@ function cueSheet(cues, song){
       : [`Outputs 1 and 2 = click, in both ears -> band and MD in-ears. Never send it to FOH.`, `Click only: the track was just a reference and is not in these files.`]), ``,
     `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
   let go = 0;
-  cues.forEach(c => out.push(`${String(++go).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
+  let lastSong = null; const multi = new Set(cues.map(c => c.song)).size > 1;
+  cues.forEach(c => { if (multi && c.song !== lastSong){ out.push(``, `     ${ascii(c.song)}`); lastSong = c.song; } out.push(`${String(++go).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`); });
   out.push(``, `Vamps and safeties set to "On the MD's GO" loop in QLab until their "Leave vamp" / "End safety"`,
     `cue is pressed. Press it only while that loop is playing; pressed too early it does nothing and it`,
     `keeps going round. It always finishes the pass it's on, so the song stays in time.`,
@@ -2604,6 +2625,76 @@ function renderQlabPreview(){
   let go = 0;
   el.innerHTML = cues.map(c => `<div class="qrow${c.type !== "audio" ? " dv" : ""}"><span class="qgo num">GO ${++go}</span><span class="qn num">${esc(c.num)}</span><span class="qw">${c.type !== "audio" ? "" : `<b>${esc(c.name)}</b> `}${esc(c.what)}</span></div>`).join("");
 }
+function qlChans(c){
+  const {sr, L, R, K} = renderChunks(c.list);
+  const n = c.joinNext ? Math.round(c.list.total * sr) : L.length;   // a segue ends exactly on the bar line
+  const cut = a => a.length === n ? a : a.slice(0, n);
+  if (qlMix()) return {sr, ch:mixCentre(cut(L), cut(R), cut(K))};
+  if (qlFOH()){ const M = new Float32Array(n); for (let i = 0; i < n; i++) M[i] = (L[i] + R[i]) * 0.5; return {sr, ch:[cut(K), M]}; }
+  return {sr, ch:[cut(K)]};   // the track was only a reference: click alone
+}
+// Whole show: every song in order, one cue number per song. A song that flows into the next is joined
+// to it in one audio cue, so the next song starts exactly on time with nothing to press.
+async function exportShow(){
+  if (SHOW.songs.length < 2) return;
+  stopIfPlaying(); saveNow();
+  const keep = {track, S, cur:SHOW.cur}, mode = S.set.qlTrack, first = Math.max(0, parseInt(S.set.qlNum, 10) || 1);
+  const all = [], files = [], enc = new TextEncoder(); let pend = null, fails = [];
+  const finish = () => { if (!pend) return; const c = pend.cue; c.file = `${c.num} - ${fileSafe(c.name)}.wav`; files.push({name:c.file, data:wav24(pend.ch, pend.sr)}); pend = null; };
+  try {
+    for (let k = 0; k < SHOW.songs.length; k++){
+      const sg = SHOW.songs[k];
+      await busy(`Building song ${k + 1} of ${SHOW.songs.length}: ${sg.name}…`);
+      if (keep.cur === sg.id && keep.track && !keep.track.demo){ track = keep.track; S = keep.S; }
+      else {
+        let f = null; try { f = await idbGet("song:" + sg.id); } catch(e){}
+        if (!f || !f.data){ fails.push(sg.name); finish(); continue; }
+        await decodeTrack(f.data, f.name);
+        let sv = null; try { sv = JSON.parse(localStorage.getItem(storeKey()) || "null"); } catch(e){}
+        S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}};
+        if (sv){ Object.assign(S, sv); S.set = {...DEFAULT_SET, ...sv.set}; normAll(); }
+      }
+      if (!S.arr.length){ fails.push(sg.name); finish(); continue; }
+      const own = S.set.qlTrack; S.set.qlTrack = mode;
+      const prev = SHOW.songs[k - 1], next = SHOW.songs[k + 1];
+      const cues = qlabPlan({base:String(first + k), song:(S.set.qlName || "").trim() || track.name, joinIn: !!(prev && prev.flows && pend), joinOut: !!(sg.flows && next)});
+      for (const c of cues){
+        if (c.type !== "audio"){ all.push(c); continue; }
+        const r = qlChans(c);
+        if (c.joinPrev && pend){
+          // join onto the previous song's last cue: same cue, the audio carries straight on
+          const a = pend.cue, off = a.dur;
+          if (a.last !== 1 || c.marks.length || c.last !== 1) a.marks.push({time:off, count:a.last});   // a slice point at the join, so a loop at the top of the next song loops only itself
+          for (const m of c.marks) a.marks.push({time:m.time + off, count:m.count});
+          a.last = c.last; a.dur += c.dur; a.name = `${a.name} > ${c.name}`;
+          a.what += ` Flows straight into ${c.song}: nothing to press.`;
+          a.notes += ` Flows straight into ${c.song} in the same cue.`;
+          pend.ch = pend.ch.map((x, i) => { const y = r.ch[i], z = new Float32Array(x.length + y.length); z.set(x); z.set(y, x.length); return z; });
+          a.joinNext = c.joinNext;
+          for (const d of cues) if (d.target === c.num) d.target = a.num;
+          if (!c.joinNext) finish();
+          continue;
+        }
+        finish();
+        all.push(c); pend = {cue:c, ch:r.ch, sr:r.sr};
+        if (!c.joinNext) finish();
+      }
+      S.set.qlTrack = own;
+    }
+    finish();
+  } catch(err){ busy(""); track = keep.track; S = keep.S; if (track) $("#trkName").textContent = track.name + " · " + fmtT(track.dur); renderAll(); return toast("Export failed: " + err.message); }
+  track = keep.track; S = keep.S; if (track) $("#trkName").textContent = track.name + " · " + fmtT(track.dur);
+  if (!all.length){ busy(""); renderAll(); return toast("Nothing to export yet."); }
+  const title = "Show";
+  const prevMode = S.set.qlTrack; S.set.qlTrack = mode;
+  files.push({name:"Import into QLab.applescript", data:enc.encode(qlabScript(all, title))});
+  files.push({name:"Cue sheet.txt", data:enc.encode(cueSheet(all, title))});
+  S.set.qlTrack = prevMode;
+  const blob = zip(files); busy(""); renderAll();
+  if (fails.length) toast(`Left out (no tempo map or audio in this browser): ${fails.join(", ")}`);
+  await save(`Show - QLab.zip`, blob);
+}
+$("#qlabShowBtn").onclick = () => exportShow();
 $("#qlabBtn").onclick = async () => {
   if (!track || !S.arr.length) return toast("Nothing to export yet.");
   stopIfPlaying();
@@ -2612,10 +2703,7 @@ $("#qlabBtn").onclick = async () => {
     const cues = qlabPlan(), song = qlSong(), files = [], enc = new TextEncoder();
     for (const c of cues){
       if (c.type !== "audio") continue;
-      const {sr, L, R, K} = renderChunks(c.list);
-      if (qlMix()) files.push({name:c.file, data:wav24(mixCentre(L, R, K), sr)});
-      else if (qlFOH()){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:c.file, data:wav24([K, M], sr)}); }
-      else files.push({name:c.file, data:wav24([K], sr)});   // the track was only a reference: click alone
+      const r = qlChans(c); files.push({name:c.file, data:wav24(r.ch, r.sr)});
     }
     files.push({name:"Import into QLab.applescript", data:enc.encode(qlabScript(cues, song))});
     files.push({name:"Cue sheet.txt", data:enc.encode(cueSheet(cues, song))});
@@ -2640,6 +2728,101 @@ async function openProject(file){
 }
 $("#projIn").addEventListener("change", e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ""; });
 
+/* ---------------- songs (the show's running order of tracks) ---------------- */
+// Each song keeps its own tempo map and running order (saved per track, as before) and its audio in IndexedDB.
+let SHOW = {songs:[], cur:null};
+try { const o = JSON.parse(localStorage.getItem("pitclick:show") || "null"); if (o && Array.isArray(o.songs)) SHOW = {songs:o.songs, cur:o.cur || null}; } catch(e){}
+function saveShow(){ try { localStorage.setItem("pitclick:show", JSON.stringify(SHOW)); } catch(e){} }
+async function idbDel(k){ const db = await idb(); return new Promise(res => { const tx = db.transaction("kv", "readwrite"); tx.objectStore("kv").delete(k); tx.oncomplete = res; tx.onerror = res; }); }
+const songIdx = id => SHOW.songs.findIndex(x => x.id === id);
+// decode a track and bring back its saved map, or detect a new one
+async function openAudio(ab, fileName){
+  await decodeTrack(ab, fileName);
+  hist.length = 0; taps = []; renderTaps(); playhead = 0;
+  const saved = loadLocal();
+  S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}};
+  if (saved){ Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; normAll(); selSec = S.sections[0] && S.sections[0].id; return true; }
+  setViewSilent("map"); renderAll(); busy("Finding the tempo…"); await detectAll(); hist.length = 0; return false;
+}
+async function addSongs(list){
+  const files = [...(list || [])]; if (!files.length) return;
+  if (locked) return toast("The show is locked. Press Unlock to add songs.");
+  stopIfPlaying(); saveNow();
+  let pos = SHOW.cur ? songIdx(SHOW.cur) + 1 : SHOW.songs.length, added = 0, bad = [];
+  for (const f of files){
+    await busy(`Adding ${f.name}${files.length > 1 ? ` (${added + bad.length + 1} of ${files.length})` : ""}…`);
+    try {
+      const ab = await f.arrayBuffer(), id = uid();
+      let kept = true; try { await idbPut("song:" + id, {name:f.name, data:ab.slice(0)}); } catch(e){ kept = false; }
+      const known = await openAudio(ab, f.name);
+      SHOW.songs.splice(pos++, 0, {id, name:track.name, dur:track.dur, flows:false});
+      SHOW.cur = id; saveShow(); saveNow(); added++;
+      if (!kept) toast(`This browser couldn't keep a copy of ${f.name}. After a refresh you'll need to add it again; its map is still saved.`);
+      if (known && files.length === 1) toast("Restored your tempo map for this track.");
+    } catch(err){ bad.push(f.name); }
+  }
+  busy(""); setViewSilent(S.sections.length ? "show" : "map"); renderAll();
+  if (bad.length) toast(`Couldn't read ${bad.join(", ")}. Try WAV, MP3, M4A or FLAC.`);
+  else if (added > 1) toast(`Added ${added} songs. Drag them into show order, and tick "Flows into next" where one runs straight into the next.`);
+}
+async function switchSong(id){
+  if (id === SHOW.cur && track && !track.demo) return;
+  const sg = SHOW.songs[songIdx(id)]; if (!sg) return;
+  stopIfPlaying(); saveNow();
+  await busy("Opening " + sg.name + "…");
+  let f = null; try { f = await idbGet("song:" + id); } catch(e){}
+  if (!f || !f.data){ busy(""); toast(`This browser no longer has the audio for “${sg.name}”. Add the file again: its map comes back with it.`); return; }
+  try { await openAudio(f.data, f.name); } catch(e){ busy(""); toast("Couldn't open " + sg.name + "."); return; }
+  SHOW.cur = id; saveShow(); busy(""); setViewSilent(view === "map" ? "map" : "show"); renderAll(); saveNow();
+}
+async function removeSong(id){
+  if (locked) return toast("The show is locked. Press Unlock to make changes.");
+  const i = songIdx(id); if (i < 0) return;
+  const sg = SHOW.songs[i]; SHOW.songs.splice(i, 1); idbDel("song:" + id);
+  if (SHOW.songs[i - 1] && !SHOW.songs[i]) SHOW.songs[i - 1].flows = false;
+  if (SHOW.cur === id){
+    const nx = SHOW.songs[i] || SHOW.songs[i - 1];
+    SHOW.cur = null; saveShow();
+    if (nx) await switchSong(nx.id); else { stopIfPlaying(); makeDemo(); hist.length = 0; playhead = 0; setViewSilent("show"); renderAll(); }
+  } else { saveShow(); renderSongs(); }
+  toast(`Removed “${sg.name}” from the show.`);
+}
+function moveSong(from, to){
+  if (locked) return toast("The show is locked. Press Unlock to make changes.");
+  if (to < 0 || to >= SHOW.songs.length || from === to) return;
+  const [x] = SHOW.songs.splice(from, 1); SHOW.songs.splice(to, 0, x);
+  SHOW.songs[SHOW.songs.length - 1].flows = false;   // the last song has nothing to flow into
+  saveShow(); renderSongs();
+}
+function renderSongs(){
+  const el = $("#songList"); if (!el) return;
+  const n = SHOW.songs.length;
+  $("#songsHint").textContent = n ? `${n} song${n > 1 ? "s" : ""} · drag to reorder` : "";
+  if (!n){ el.innerHTML = `<div class="empty">Add the tracks for the show here. You can add several at once, then drag them into order.</div>`; }
+  else el.innerHTML = SHOW.songs.map((sg, i) => {
+    const sel = sg.id === SHOW.cur && track && !track.demo, nx = SHOW.songs[i + 1];
+    return `<div class="row${sel ? " sel" : ""}" data-sid="${sg.id}"><span class="grip" tabindex="0" title="Drag to reorder" aria-label="Move ${esc(sg.name)}">⠿</span><span class="mark">${i + 1}</span>
+      <div style="min-width:0"><div class="nm" title="${esc(sg.name)}">${esc(sg.name)}</div><div class="meta">${fmtT(sg.dur || 0)}</div></div>
+      <div class="tags">${nx ? `<button type="button" class="btn sm flow" data-a="flow" aria-pressed="${!!sg.flows}" title="This song runs straight into the next one, with no gap and no GO">Flows into next</button>` : ""}<button type="button" class="btn sm rm" data-a="rm" title="Remove from the show" aria-label="Remove ${esc(sg.name)}">×</button></div></div>
+      ${sg.flows && nx ? `<div class="segue">↳ straight into ${i + 2}. ${esc(nx.name)}</div>` : ""}`;
+  }).join("");
+  const sb = $("#qlabShowBtn"), sn = $("#qlShowNote");
+  if (sb){ sb.hidden = n < 2; sb.textContent = `Export whole show (${n} songs)`; sn.hidden = n < 2;
+    const segs = SHOW.songs.filter((x, i) => x.flows && SHOW.songs[i + 1]).length;
+    sn.textContent = `Whole show: every song in order, cue numbers 1, 2, 3… one per song.${segs ? ` ${segs} segue${segs > 1 ? "s" : ""}: those songs are joined into one cue, so the next song starts on time with nothing to press.` : ""} Uses this song's track setting for all of them.`; }
+}
+$("#songList").addEventListener("click", e => {
+  const row = e.target.closest("[data-sid]"); if (!row) return;
+  const id = row.dataset.sid, a = e.target.closest("[data-a]");
+  if (a && a.dataset.a === "grip") return;
+  if (e.target.closest(".grip")) return;
+  if (a && a.dataset.a === "flow"){ if (locked) return toast("The show is locked. Press Unlock to make changes."); const sg = SHOW.songs[songIdx(id)]; sg.flows = !sg.flows; saveShow(); renderSongs(); return; }
+  if (a && a.dataset.a === "rm"){ removeSong(id); return; }
+  switchSong(id);
+});
+rowDragger($("#songList"), moveSong);
+$("#songIn").addEventListener("change", e => { addSongs(e.target.files); e.target.value = ""; });
+
 /* ---------------- boot ---------------- */
 async function boot(){
   let ses = null; try { ses = JSON.parse(localStorage.getItem("pitclick:session") || "null"); } catch(e){}
@@ -2654,6 +2837,17 @@ async function boot(){
     zoom = clamp(zoom, 1, ZMAX()); $("#zoom").value = zToSlider(zoom); drawLane();
     if (ses.scroll) $("#lane").scrollLeft = ses.scroll;
   };
+  if (SHOW.cur && !(ses && ses.demo)){
+    const sg = SHOW.songs[songIdx(SHOW.cur)];
+    await busy("Reopening " + (sg ? sg.name : "your show") + "…");
+    let ok = false;
+    try { const f = await idbGet("song:" + SHOW.cur); if (f && f.data){ await openAudio(f.data, f.name); ok = true; } } catch(e){ ok = false; }
+    busy("");
+    if (ok){ if (ses && ses.name === track.name){ const pr = ses.project; ses.project = {...JSON.parse(snapshot())}; apply(); ses.project = pr; } else { setViewSilent("show"); renderAll(); } toast("Picked up where you left off."); return; }
+    makeDemo(); SHOW.cur = null; saveShow(); renderAll();
+    toast(`Add “${sg ? sg.name : "your track"}” again to carry on. Its tempo map and running order come back with it.`);
+    return;
+  }
   if (ses && !ses.demo){
     await busy("Reopening " + ses.name + "…");
     let ok = false;
@@ -2662,7 +2856,10 @@ async function boot(){
       if (f && f.data && f.name.replace(/\.[^.]+$/, "") === ses.name){ await decodeTrack(f.data, f.name); ok = Math.abs(track.dur - ses.dur) < 0.5; }
     } catch(e){ ok = false; }
     busy("");
-    if (ok){ S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}}; apply(); toast("Picked up where you left off."); return; }
+    if (ok){
+      S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}}; apply();
+      try { const f = await idbGet("lastFile"); const id = uid(); await idbPut("song:" + id, f); SHOW = {songs:[{id, name:track.name, dur:track.dur, flows:false}], cur:id}; saveShow(); renderSongs(); } catch(e){}
+      toast("Picked up where you left off."); return; }
     makeDemo(); renderAll();
     toast(`Load “${ses.name}” again to carry on. Your tempo map and running order will come back with it.`);
     return;
