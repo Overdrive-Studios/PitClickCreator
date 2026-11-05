@@ -163,6 +163,7 @@ kbd{font:500 10.5px var(--f-num);border:1px solid var(--line2);border-bottom-wid
 .row .meta svg.nglyph{height:1.35em}
 .row .tags{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
 .row.lifting{opacity:.4}
+.row.skipped .nm,.row.skipped .meta,.row.skipped .mark{opacity:.45;text-decoration:line-through}
 .row.drop-before{box-shadow:inset 0 3px 0 var(--amber)}
 .row.drop-after{box-shadow:inset 0 -3px 0 var(--amber)}
 .empty{padding:20px 14px;color:var(--muted)}
@@ -234,7 +235,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v26</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v27</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -304,8 +305,7 @@ input[type=checkbox]{accent-color:var(--amber)}
           <button class="btn" id="addIntro">Intro click</button>
           <button class="btn" id="addClick">Click bars at end</button>
           <span class="tsep"></span>
-          <span class="inline" title="Straight through: the original recording plays on underneath while the click follows the show, so extra vamp or safety passes don't stretch the song. Exports always use the edited track."><span class="lbl">Track</span>
-            <span class="seg" role="group" aria-label="Track playback"><button type="button" data-straight="0" aria-pressed="true">Edited</button><button type="button" data-straight="1" aria-pressed="false">Straight through</button></span></span>
+          <label class="inline"><input type="checkbox" id="keepLen"> Keep the song as long as the recording</label>
           <span class="grow"></span>
           <button class="btn" id="resetArr" title="Rebuild the running order from the original's sections">Reset</button>
         </div>
@@ -542,7 +542,7 @@ function applyLock(){
   const b = $("#lockBtn"); b.setAttribute("aria-pressed", locked); b.textContent = locked ? "Unlock" : "Lock";
   const sel = "#mapTools input, #mapTools button, #mapTools select, #showTools input, #showTools button, #showTools select, #mapInsp input, #mapInsp button, #mapInsp select, #showInsp input, #showInsp button, #showInsp select, [data-ci], [data-ci-other], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
   document.querySelectorAll(sel).forEach(el => { if (locked) el.disabled = true; else if (el.dataset.lk !== "1") el.disabled = false; });
-  document.querySelectorAll("[data-straight]").forEach(b => b.disabled = false);
+  $("#keepLen").disabled = false;
   document.querySelectorAll("label.file").forEach(l => l.classList.toggle("disabled", locked));
   $("#tapBtn").disabled = false;
   if (!locked){ renderTaps(); $("#undoBtn").disabled = !hist.length; }
@@ -616,7 +616,7 @@ function computeSrc(){
 
 /* ---------------- timelines ---------------- */
 // chunk: {kind, t, dur, src|null, bpm, beats, bar, bars, click, clickFrom, label, name, ent, pass, passes, open, sid}
-function build(v, forExport){
+function build(v, forExport, forceKeep){
   computeSrc();
   const ch = []; let t = 0;
   const push = c => { c.t = t; if (c.dur > 1e-6){ ch.push(c); t += c.dur; } };
@@ -638,7 +638,7 @@ function build(v, forExport){
       if (track && track.dur > last.end) push({kind:"tail", dur:track.dur - last.end, src:last.end, click:false});
     }
   } else {
-    const ents = S.arr.filter(e => e.kind === "click" || secById(e.sec));
+    const ents = S.arr.filter(e => !e.skip && (e.kind === "click" || secById(e.sec)));
     // pickup audio (before bar 1) plays over the end of the count-in and any intro click bars
     if (ents.length){
       const e0 = ents[0]; const i0 = e0.kind === "sec" ? secById(e0.sec) : e0;
@@ -659,7 +659,7 @@ function build(v, forExport){
         const s = secById(e.sec); const tm = timeMap(s, s.bars);
         const a = e.skipStart || 0, z = s.bars - (e.skipEnd || 0), nb = z - a;
         if (nb <= 0) return;
-        const reps = Math.max(1, e.repeat | 0);
+        const reps = e.open ? 1 : Math.max(1, e.repeat | 0);
         const piece = (b0, b1, extra) => { push({kind:"sec", sid:s.id, ent:ei, pass:0, passes:1, open:false, safety:false, goStart:false, dur:tm.barT[b1] - tm.barT[b0], src:s.start + tm.barT[b0], ...meterOf(s), tm, barOff:b0, bar, bars:b1 - b0, click:!s.mute, clickFrom:0, label:s.label, name:s.name, ...extra}); bar += b1 - b0; };
         // a vamp or safety can loop just some of the bars: the ones before play once on the way in, the ones after on the way out
         const loops = e.open || (e.safety && reps > 1);
@@ -689,14 +689,53 @@ function build(v, forExport){
   }
   // "Track straight through": the original recording runs on underneath while the click follows the
   // running order, so extra vamp / safety passes don't stretch the song. Exports always use the edit.
-  if (v !== "map" && !forExport && S.set.straight && track){
-    if (ch.length && ch[ch.length - 1].kind === "tail"){ t -= ch[ch.length - 1].dur; ch.pop(); }
-    let cur = null;
-    for (const c of ch){
-      if (cur == null){ if (c.src != null) cur = c.src + c.dur; continue; }
-      c.src = cur; cur += c.dur;
+  // "Song length: stays as recorded": every section keeps its place in the recording, the track runs
+  // straight through, and repeats (vamp / safety / ×N passes) fill the room before the next section
+  // instead of pushing it later. Passes that don't fit are cut short and reported. Exports use the edit.
+  ch.fit = {};
+  if (v !== "map" && !forExport && (S.set.straight || forceKeep) && track){
+    const first = ch.find(c => c.kind === "sec" && c.src != null);
+    if (first){
+      const shift = first.t - first.src, items = ch.filter(c => c.kind !== "tail" && c.kind !== "gap");
+      const out = []; let cur = 0, slack = 0;
+      const note = c => { if (c.ent == null) return null; return ch.fit[c.ent] || (ch.fit[c.ent] = {unit:0, unitBars:0, start:null, room:null, cut:0, next:null}); };
+      for (const c of items) c.fullDur = c.dur;
+      for (const c of items){
+        if (c.t < first.t - 1e-9){ c.t = cur; cur += c.dur; out.push(c); continue; }   // count-in / intro click before bar 1
+        const anchor = c.kind === "sec" && !(c.pass > 0) && c.part !== "out";
+        let start = cur;
+        if (anchor){
+          const want = c.src + shift;
+          if (want >= cur - slack - 1e-3) start = want;     // in recording order: snap to where it is in the track
+        }
+        if (start < cur - 1e-6){
+          // the repeats before this ran past it: trim them back so this section stays put
+          let over = cur - start;
+          while (over > 1e-6 && out.length){
+            const p = out[out.length - 1], take = Math.min(over, p.dur);
+            const f = note(p); if (f) { f.cut += take; if (f.next == null) f.next = c.label || c.name; }
+            p.dur -= take; over -= take; if (p.dur <= 1e-6) out.pop();
+          }
+          cur = start;
+        } else if (start > cur + 1e-4){
+          out.push({kind:"gap", dur:start - cur, click:false, name:"Track only (no click)"});
+          cur = start;
+        }
+        if (anchor) slack = 0; else if (c.pass > 0) slack += c.dur;
+        c.t = cur; out.push(c); cur += c.dur;
+        if ((c.open || c.safety || c.passes > 1) && c.pass === 0){ const f = note(c); f.unit = c.dur; f.unitBars = c.bars; f.start = c.t; }
+      }
+      // how much room each repeating entry has before the next section in the recording
+      for (const [k, f] of Object.entries(ch.fit)){
+        if (f.start == null) continue;
+        const own = items.filter(c => c.ent == k && c.part === "out").reduce((a, c) => a + (c.fullDur || c.dur), 0);
+        const nxt = out.find(c => c.t > f.start + 1e-6 && c.kind === "sec" && !(c.pass > 0) && c.ent != k);
+        f.room = Math.max(0, (nxt ? nxt.t : (track.dur + shift)) - f.start - own); f.next = nxt ? nxt.label : null;
+      }
+      let t2 = 0; for (const c of out){ c.t = t2; c.src = c.t - shift; t2 += c.dur; }
+      ch.length = 0; out.forEach(c => ch.push(c)); t = t2;
+      const endT = track.dur + shift; if (t < endT - 0.01) push({kind:"tail", dur:endT - t, src:t - shift, click:false, name:"Tail"});
     }
-    if (cur != null && cur < track.dur - 0.01) push({kind:"tail", dur:track.dur - cur, src:cur, click:false, name:"Tail"});
   }
   for (let i = 0; i < ch.length; i++){
     const a = ch[i-1], c = ch[i];
@@ -1511,15 +1550,18 @@ function renderArr(){
         <div class="tags">${e.cue && i > 0 ? `<span class="badge click">GO</span>` : ""}<span class="badge click">click only</span></div></div>`;
     }
     const s = secById(e.sec); if (!s) return "";
-    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = e.open || e.repeat > 1;
+    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = !e.skip && (e.open || e.repeat > 1);
     const tags = [];
-    const lr = (e.open || e.safety) && (e.loopFrom > 1 || (e.loopTo && e.loopTo < nb)) ? ` · loops ${(e.loopTo || nb) - (e.loopFrom || 1) + 1} bar${(e.loopTo || nb) - (e.loopFrom || 1) ? "s" : ""}` : "";
-    if (e.open) tags.push(`<span class="badge">till GO${lr}</span>`);
-    else if (e.safety && e.repeat > 1) tags.push(`<span class="badge" title="Plays ${e.repeat} times unless GO skips the rest">safety ×${e.repeat}${lr}</span>`);
-    else if (e.repeat > 1) tags.push(`<span class="badge">×${e.repeat}</span>`);
+    const ln = ((e.loopTo | 0) || nb) - ((e.loopFrom | 0) || 1) + 1, lr = ` · ${ln} bar${ln > 1 ? "s" : ""}`;
+    if (e.skip) tags.push(`<span class="badge dim">skipped</span>`);
+    else if (e.open) tags.push(`<span class="badge">vamp${lr}</span>`);
+    else if (e.safety && e.repeat > 1) tags.push(`<span class="badge safety">safety ×${e.repeat}${lr}</span>`);
+    else if (e.repeat > 1) tags.push(`<span class="badge dim">×${e.repeat}</span>`);
     if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
     if (e.cue && i > 0) tags.unshift(`<span class="badge click" title="Stops and waits for GO before this">GO</span>`);
-    return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark${isV ? " vamp" : ""}">${esc(s.label)}</span>
+    const fit = r.fit && r.fit[i];
+    if (fit && fit.cut > 0.01) tags.push(`<span class="badge" style="background:rgba(255,107,94,.16);color:var(--danger)" title="Not enough room in the recording before ${esc(fit.next || "the next section")}">doesn't fit</span>`);
+    return `<div class="row${sel}${e.skip ? " skipped" : ""}" data-i="${i}">${grip}<span class="mark${e.safety && !e.skip ? " safety" : isV ? " vamp" : ""}">${esc(s.label)}</span>
       <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${tempoHTML(s)}</div></div>
       <div class="tags">${tags.join("")}</div></div>`;
   }).join("") || `<div class="empty">Nothing in the running order yet. Add a section above.</div>`;
@@ -1550,18 +1592,26 @@ function renderShowInsp(span){
   el.innerHTML = `<div data-i="${i}">
     <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">Show entry</span></div>
     <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${tempoHTML(s)}</p>
-      ${(() => { const mode = e.open ? "vamp" : e.safety ? "safety" : "fixed";
-        const lab = mode === "safety" ? "Plays up to" : mode === "vamp" ? "Times in export" : "Times";
-        const help = mode === "vamp" ? "Loops until GO, live and in QLab. The normal export plays it this many times."
-          : mode === "safety" ? `Plays ${e.repeat} times on its own. If it isn't needed, GO during a pass skips the rest. In QLab the skip is a button in the Safeties cart, so the GO list isn't affected.`
-          : "Plays this many times. No GO needed.";
-        return `<div class="f"><span>Type</span><span class="seg" role="group" aria-label="How it plays">${[["fixed", "As written"], ["vamp", "Vamp"], ["safety", "Safety"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}">${t}</button>`).join("")}</span></div>
-      <label class="f"><span>${lab}</span><input type="number" data-f="repeat" value="${e.repeat}" min="1" max="99">${mode === "safety" ? " <small>times</small>" : ""}</label>
-      ${mode === "fixed" ? "" : (() => { const nb = s.bars - (e.skipStart || 0) - (e.skipEnd || 0), lf = clamp((e.loopFrom | 0) || 1, 1, nb), lt = Math.max(lf, clamp((e.loopTo | 0) || nb, 1, nb));
-        const first = (span[i] ? span[i].a : 1);
-        return `<div class="f"><span>Loop bars</span><input type="number" data-f="loopFrom" value="${lf}" min="1" max="${nb}" style="width:3.8em" aria-label="Loop from bar"> to <input type="number" data-f="loopTo" value="${lt}" min="1" max="${nb}" style="width:3.8em" aria-label="Loop to bar"> <small>of ${nb} · ${lt - lf + 1} bar${lt - lf ? "s" : ""}</small></div>
-        ${lf > 1 || lt < nb ? `<p class="note">${lf > 1 ? `Bars 1–${lf - 1} play once on the way in. ` : ""}${lt < nb ? `Bars ${lt + 1}–${nb} play once on the way out.` : ""}</p>` : ""}`; })()}
-      <p class="note">${help}</p>`; })()}</div>
+      ${(() => {
+        const mode = e.skip ? "skip" : e.open ? "vamp" : e.safety ? "safety" : e.repeat > 1 ? "repeat" : "once";
+        const nb = s.bars - (e.skipStart || 0) - (e.skipEnd || 0), lf = clamp((e.loopFrom | 0) || 1, 1, nb), lt = Math.max(lf, clamp((e.loopTo | 0) || nb, 1, nb)), len = lt - lf + 1;
+        const pick = `<div class="f"><span class="seg" role="group" aria-label="How it plays">${[["once", "Once"], ["repeat", "Repeat"], ["vamp", "Vamp"], ["safety", "Safety"], ["skip", "Skip"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}">${t}</button>`).join("")}</span></div>`;
+        const lenRow = `<div class="f"><span>Length</span><input type="number" data-f="loopLen" value="${len}" min="1" max="${nb}" style="width:4em" aria-label="Length in bars"> bars${nb > 1 ? ` <small>from bar</small> <input type="number" data-f="loopFrom" value="${lf}" min="1" max="${nb}" style="width:3.6em" aria-label="Starts at bar">` : ""}</div>`;
+        let rows = "", say = "";
+        if (mode === "once") say = "Plays through one time.";
+        if (mode === "repeat"){ rows = `<label class="f"><span>Times</span><input type="number" data-f="repeat" value="${e.repeat}" min="2" max="99"></label>`; say = `Plays ${e.repeat} times through.`; }
+        const what = len === nb ? "the section" : len === 1 ? "this bar" : `these ${len} bars`;
+        if (mode === "vamp"){ rows = lenRow; say = `Loops ${what} until GO.`; }
+        if (mode === "safety"){ rows = lenRow + `<label class="f"><span>Up to</span><input type="number" data-f="repeat" value="${e.repeat}" min="2" max="99"> times</label>`; say = `Plays ${what} ${e.repeat} times. GO moves on early.`; }
+        if (mode === "skip") say = "Not played. Pick another option to bring it back.";
+        if ((mode === "vamp" || mode === "safety") && len < nb) say += " The rest of the section plays once.";
+        let room = "";
+        if (mode === "vamp" || mode === "safety"){
+          const f = build("show", false, true).fit[i];
+          if (f && f.room != null && f.unit){ const barLen = f.unit / f.unitBars, rb = Math.round(f.room / barLen * 10) / 10;
+            room = `<p class="note" style="color:var(--vamp)">In the recording there's room for ${rb} bar${rb === 1 ? "" : "s"} here before ${f.next ? esc(f.next) : "the end"}.</p>`; }
+        }
+        return pick + rows + `<p class="note">${say}</p>` + room; })()}</div>
     <div class="group"><h3>Cut bars</h3>
       <label class="f"><span>From the start</span><input type="number" data-f="skipStart" value="${e.skipStart || 0}" min="0" max="${s.bars - 1}"> <small>bars</small></label>
       <label class="f"><span>From the end</span><input type="number" data-f="skipEnd" value="${e.skipEnd || 0}" min="0" max="${s.bars - 1}"> <small>bars</small></label></div>${edit}</div>`;
@@ -1572,7 +1622,12 @@ function showClick(ev){
   if (a && a.dataset.a === "grip") return;
   if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderAll(); } return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
-  if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => { en.open = m === "vamp"; en.safety = m === "safety"; if (m === "safety" && en.repeat < 2) en.repeat = 2; }); return; }
+  if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => {
+    en.skip = m === "skip"; if (m === "skip") return;
+    en.open = m === "vamp"; en.safety = m === "safety";
+    if (m === "once" || m === "vamp") en.repeat = 1;
+    if ((m === "repeat" || m === "safety") && en.repeat < 2) en.repeat = 2;
+  }); return; }
   mut(() => {
     const arr = S.arr;
     if (a.dataset.a === "dup"){ const c = {...arr[i], id:uid()}; arr.splice(i + 1, 0, c); selEnt = c.id; }
@@ -1586,14 +1641,28 @@ function showChange(ev){
     if (f === "open") en.open = ev.target.checked;
     else if (f === "cue") en.cue = ev.target.checked;
     else if (f === "label" || f === "name") en[f] = v;
-    else if (f === "loopFrom" || f === "loopTo"){
+    else if (f === "loopLen" || (f === "loopFrom" && en.loopTo == null && !en.loopFrom)){
+      const s = secById(en.sec), nb = s ? s.bars - (en.skipStart || 0) - (en.skipEnd || 0) : 1;
+      const lf = f === "loopFrom" ? clamp(Math.round(+v || 1), 1, nb) : ((en.loopFrom | 0) || 1);
+      const len = f === "loopLen" ? clamp(Math.round(+v || 1), 1, nb) : ((en.loopTo | 0) || nb) - ((en.loopFrom | 0) || 1) + 1;
+      en.loopFrom = Math.min(lf, nb - 0); en.loopTo = clamp(en.loopFrom + len - 1, en.loopFrom, nb);
+      if (en.loopFrom === 1 && en.loopTo === nb){ delete en.loopFrom; delete en.loopTo; }
+    }
+    else if (f === "loopFrom"){
+      // moving the start keeps the same length
+      const s = secById(en.sec), nb = s ? s.bars - (en.skipStart || 0) - (en.skipEnd || 0) : 1;
+      const len = ((en.loopTo | 0) || nb) - ((en.loopFrom | 0) || 1) + 1;
+      en.loopFrom = clamp(Math.round(+v || 1), 1, nb); en.loopTo = clamp(en.loopFrom + len - 1, en.loopFrom, nb);
+      if (en.loopFrom === 1 && en.loopTo === nb){ delete en.loopFrom; delete en.loopTo; }
+    }
+    else if (f === "loopTo"){
       const s = secById(en.sec), nb = s ? s.bars - (en.skipStart || 0) - (en.skipEnd || 0) : 1;
       en[f] = clamp(Math.round(+v || 1), 1, nb);
       const lf = (en.loopFrom | 0) || 1, lt = (en.loopTo | 0) || nb;
       if (lf > lt){ if (f === "loopFrom") en.loopTo = lf; else en.loopFrom = lt; }
       if (((en.loopFrom | 0) || 1) === 1 && ((en.loopTo | 0) || nb) === nb){ delete en.loopFrom; delete en.loopTo; }
     }
-    else if (f === "repeat"){ en.repeat = clamp(Math.round(+v || 1), 1, 99); if (en.safety && en.repeat < 2){ en.repeat = 2; toast("A safety needs at least 2 passes."); } }
+    else if (f === "repeat"){ en.repeat = clamp(Math.round(+v || 1), 1, 99); if (en.safety && en.repeat < 2) en.repeat = 2; }
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
     else if (f === "bars") en.bars = clamp(Math.round(+v || 1), 1, 999);
     else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(en, f, v)) return; }
@@ -1624,7 +1693,7 @@ function defaultArr(){ return S.sections.map(s => ({id:uid(), kind:"sec", sec:s.
 function renderSettings(){
   const s = S.set;
   $("#autoLabel").checked = s.autoLabel !== false;
-  document.querySelectorAll("[data-straight]").forEach(b => b.setAttribute("aria-pressed", (b.dataset.straight === "1") === !!s.straight));
+  $("#keepLen").checked = !!s.straight;
   $("#anchorChk").checked = s.anchor !== false;
   $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
   $("#qlNum").value = s.qlNum || "1";
@@ -1650,12 +1719,7 @@ document.addEventListener("change", e => {
   const v = clamp(Math.round(+e.target.value || 0), 0, 16);
   mut(() => S.set.countIn = v);
 });
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-straight]"); if (!b) return;
-  const v = b.dataset.straight === "1"; if (!!S.set.straight === v) return;
-  stopIfPlaying(); S.set.straight = v; saveLocal(); renderAll();
-  toast(v ? "Track plays straight through: the original recording runs under the click." : "Track edited to follow the show.");
-});
+$("#keepLen").addEventListener("change", e => { stopIfPlaying(); S.set.straight = e.target.checked; saveLocal(); renderAll(); });
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
 $("#anchorChk").onchange = e => { mut(() => S.set.anchor = e.target.checked, {free:true}); toast(e.target.checked ? "Editing a section won't move the others." : "Sections are chained: making one longer pushes the rest later."); };
 $("#setSound").onchange = e => mut(() => S.set.sound = e.target.value);
@@ -2315,13 +2379,13 @@ function qlabPlan(){
     let sk = 0;
     for (const v of vamps){
       if (v.safety){
-        const nm = `Skip safety ${v.label} ${v.name || ""}`.trim(), bars = `m.${v.bar}-${v.bar + v.bars - 1}`;
+        const nm = `Skip safety ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
         cues.push({type:"safety", num:`S${aNum}.${++sk}`, target:aNum, name:nm, passes:v.passes,
           what:`${nm} (${bars}, plays ${v.passes} times). Only if the MD calls it: click during a pass and it moves on after that pass. Not in the GO list.`,
           notes:`Safety ${bars} plays ${v.passes} times on its own. If it's not needed, click this during a pass on the MD's call: it finishes that pass and carries on. Leave it alone and the safety plays out.`});
         continue;
       }
-      const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = `m.${v.bar}-${v.bar + v.bars - 1}`;
+      const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
       cues.push({type:"devamp", num:num(), target:aNum, name:nm, what:`${nm} (${bars}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
         notes:`Vamp ${bars} loops until this GO. Press it while the vamp is looping, on the MD's cue. It finishes the current pass, then the song carries on.`});
     }

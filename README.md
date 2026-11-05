@@ -34,5 +34,6 @@ One screen, laid out like a DAW: control bar (transport, readout, count-in, Clic
 the inspector on the left, and the timeline with the section list or running order in the middle.
 **Original** shows the recording as it is (tempo map); **Show** shows the running order.
 In the Show view the inspector has the running-order settings and the section's tempo and meter together.
-**Track: Straight through** plays the original recording under the click so extra vamp or safety passes
-don't stretch the song; exports always use the edited track.
+Each running-order entry **Plays**: Once, Repeat (×N), Vamp (length in bars, loops until GO), Safety (length in bars, up to N times)
+or Skip. QLab follows the same choices. **Keep the song as long as the recording** keeps every section where it is in the
+recording so repeats don't make the song longer; exports always use the show as edited.
