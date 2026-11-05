@@ -236,7 +236,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v36</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v37</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -437,13 +437,17 @@ function tempoRows(o, extra){
 }
 // Feel: how many clicks a bar gets. "all" = every written beat, "groups" = one per group (6/8 in 2),
 // "half" = every other beat (4/4 in 2), "bar" = once a bar (in 1), "double" = twice a beat (2/2 in 4)
+// "e3" = a click every 3 written beats (12/4 in 4), for any even split of the bar
 function feels(o){
-  const out = [], n = o.num;
-  if (!simple(o)){ out.push(["groups", o.groups.length]); out.push(["all", n]); }
-  else { out.push(["all", n]); if (n % 2 === 0 && n >= 4) out.push(["half", n / 2]); if (n <= 6) out.push(["double", n * 2]); }
-  if (n > 1 && !out.some(f => f[1] === 1)) out.push(["bar", 1]);
+  const out = [], n = o.num, has = k => out.some(f => f[1] === k);
+  if (!simple(o)) out.push(["groups", o.groups.length]);
+  out.push(["all", n]);
+  for (let m = 2; m < n; m++) if (n % m === 0 && !has(n / m)) out.push(["e" + m, n / m]);
+  if (simple(o) && n <= 6) out.push(["double", n * 2]);
+  if (n > 1 && !has(1)) out.push(["bar", 1]);
   return out.sort((a, b) => a[1] - b[1]);
 }
+const feelStep = o => o.clickOn === "bar" ? o.num : o.clickOn === "half" ? 2 : /^e\d+$/.test(o.clickOn || "") ? +o.clickOn.slice(1) : 0;
 const feelOk = (o, v) => feels(o).some(f => f[0] === v);
 const feelN = o => (feels(o).find(f => f[0] === o.clickOn) || [0, o.num])[1];
 const feelTxt = o => { const d = isCompound(o.num, o.den) ? "groups" : "all"; return o.clickOn && o.clickOn !== d ? "in " + feelN(o) : ""; };
@@ -454,7 +458,7 @@ function meterCells(o, tag){
     sig: `<span class="sigbox"><input type="text" data-f="sig" value="${o.num}/${o.den}" style="width:4.6em" class="num" autocomplete="off" aria-label="Time signature" aria-haspopup="listbox" aria-expanded="false"><button type="button" class="sigdrop" tabindex="-1" aria-label="Show time signatures">▾</button></span>` +
          (grouped || o.den >= 8 ? ` <input type="text" data-f="groups" value="${o.groups.join("+")}" style="width:5.4em" class="num" title="Beat grouping, e.g. 2+2+3" aria-label="Beat grouping">` : ""),
     tempo: `<select data-f="unit" aria-label="BPM counts">${unitOpts}</select> = <input type="number" data-f="bpm" value="${fmtBpm(o.bpm)}" min="10" max="600" step="0.01" class="w6" aria-label="BPM">`,
-    clickOn: `<span class="seg" role="group" aria-label="Feel: clicks per bar">${feels(o).map(([v, k]) => `<button type="button" data-a="feel" data-v="${v}" aria-pressed="${o.clickOn === v}" title="${v === "groups" ? "One click per group: " + o.groups.join("+") : v === "half" ? "Every other beat" : v === "bar" ? "Once a bar" : v === "double" ? "Twice a beat" : "Every " + (UNAME[String(o.den)] || "beat").toLowerCase()}">In ${k}</button>`).join("")}</span>`
+    clickOn: `<span class="seg" role="group" aria-label="Feel: clicks per bar">${feels(o).map(([v, k]) => `<button type="button" data-a="feel" data-v="${v}" aria-pressed="${o.clickOn === v}" title="${v === "groups" ? "One click per group: " + o.groups.join("+") : v[0] === "e" ? "A click every " + v.slice(1) + " beats" : v === "bar" ? "Once a bar" : v === "double" ? "Twice a beat" : "Every " + (UNAME[String(o.den)] || "beat").toLowerCase()}">In ${k}</button>`).join("")}</span>`
   };
 }
 // apply an edit to a meter field; returns false (with a toast) if invalid
@@ -462,7 +466,7 @@ function editMeter(o, f, v){
   if (f === "sig"){ const sg = parseSig(v); if (!sg){ toast("Type a time signature like 4/4, 6/8 or 7/8."); return false; } if (sg.num !== o.num || sg.den !== o.den) setSig(o, sg); return true; }
   if (f === "groups"){ const g = parseGroups(v, o.num); if (!g){ toast(`Grouping must add up to ${o.num}, e.g. ${defGroups(o.num, o.den).join("+")}.`); return false; } o.groups = g; if (!feelOk(o, o.clickOn)) o.clickOn = simple(o) ? "all" : "groups"; return true; }
   if (f === "unit"){ if (UNITS[v]) o.unit = v; return true; }
-  if (f === "clickOn"){ if (feelOk(o, v)) o.clickOn = v; return true; }
+  if (f === "clickOn"){ if (v === "half") v = "e2"; if (feelOk(o, v)) o.clickOn = v; return true; }
   if (f === "bpm"){ o.bpm = clamp(+v || o.bpm, 10, 600); return true; }
   return false;
 }
@@ -482,7 +486,8 @@ function normMeter(o){
   delete o.beats;
   if (!UNITS[o.unit]) o.unit = defUnit(o.num, o.den);
   if (!Array.isArray(o.groups) || o.groups.reduce((a, b) => a + b, 0) !== o.num) o.groups = defGroups(o.num, o.den);
-  if (!["groups", "all", "half", "bar", "double"].includes(o.clickOn) || (o.clickOn !== "all" && !feelOk(o, o.clickOn))) o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
+  if (o.clickOn === "half") o.clickOn = "e2";
+  if (!o.clickOn || (o.clickOn !== "all" && !feelOk(o, o.clickOn))) o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
   return o;
 }
 // vamp / safety: e.vt is what it's called; e.open = loops until the MD's GO; e.safety = plays a set number of times
@@ -511,8 +516,8 @@ function timeMap(o, bars){
   const clicks = [];
   for (let b = 0; b < bars; b++){
     const arr = []; let pos = 0, beatNo = 0;
-    if (o.clickOn === "half" || o.clickOn === "bar"){
-      const st = o.clickOn === "bar" ? n : 2;
+    if (feelStep(o)){
+      const st = feelStep(o);
       for (let k = 0; k < n; k += st){ const q = b*n + k; arr.push([pt[q] - barT[b], k === 0 ? "acc" : "beat", ++beatNo, pt[q + st] - pt[q], q, st]); }
       clicks.push(arr); continue;
     }
@@ -538,7 +543,7 @@ const simple = o => o.groups.every(g => g === 1);
 // main clicks in one bar: [time, kind, beatNo]
 function barClicks(o){
   const p = pulse(o), out = []; let pos = 0, beatNo = 0;
-  if (o.clickOn === "half" || o.clickOn === "bar"){ const st = o.clickOn === "bar" ? o.num : 2; for (let k = 0; k < o.num; k += st) out.push([k * p, k === 0 ? "acc" : "beat", ++beatNo, st * p]); return out; }
+  if (feelStep(o)){ const st = feelStep(o); for (let k = 0; k < o.num; k += st) out.push([k * p, k === 0 ? "acc" : "beat", ++beatNo, st * p]); return out; }
   if (o.clickOn === "double"){ for (let k = 0; k < o.num; k++){ out.push([k * p, k === 0 ? "acc" : "beat", ++beatNo, p / 2]); out.push([(k + .5) * p, "beat", ++beatNo, p / 2]); } return out; }
   o.groups.forEach((g, gi) => {
     if (o.clickOn === "groups"){ out.push([pos * p, gi === 0 ? "acc" : "beat", ++beatNo, g * p]); }
@@ -871,7 +876,7 @@ function beatsOf(c){
     for (const [t0, k0, , len, , g] of tm.clicks[b]){
       const k = k0 === "acc" && !S.set.accent ? "beat" : k0;
       // subdivide each click: simple meters by the setting; grouped clicks fill in their pulses
-      const n = c.clickOn === "groups" ? (sub > 1 ? g : 1) : (c.clickOn === "half" || c.clickOn === "bar") ? (sub > 1 ? g : 1) : (simple(c) ? sub : 1);
+      const n = c.clickOn === "groups" ? (sub > 1 ? g : 1) : feelStep(c) ? (sub > 1 ? g : 1) : (simple(c) ? sub : 1);
       for (let j = 0; j < n; j++){
         const t = tb + t0 + j * len / n; if (t >= c.dur - 1e-6) return out;
         out.push([t, j > 0 ? "sub" : k]);
@@ -1893,7 +1898,8 @@ document.addEventListener("keydown", e => {
 document.addEventListener("keyup", e => { if (e.code === "Space" && e.target.matches("button, label")) e.preventDefault(); });
 document.querySelectorAll(".transport button").forEach(b => b.addEventListener("mouseup", () => b.blur()));
 /* time signature dropdown: every signature shows as soon as the box is clicked; typing still works */
-const SIG_GROUPS = [["Common", ["4/4", "3/4", "2/4", "2/2", "6/8", "9/8", "12/8", "3/8"]], ["Odd", ["5/4", "7/4", "5/8", "7/8", "11/8", "6/4", "3/2", "1/4"]]];
+const SIG_GROUPS = [["Common", ["4/4", "3/4", "2/4", "2/2", "6/8", "9/8", "12/8", "3/8"]], ["Odd", ["5/4", "7/4", "5/8", "7/8", "11/8", "6/4", "3/2", "1/4"]],
+  ["Long bars", ["12/4", "9/4", "8/4", "6/2", "4/2", "10/8", "13/8", "15/8"]], ["Sixteenths", ["5/16", "7/16", "9/16", "12/16"]]];
 let sigFor = null, sigHi = -1, sigQuiet = 0;
 function openSig(inp){
   const pop = $("#sigPop"); sigFor = inp; sigHi = -1;
