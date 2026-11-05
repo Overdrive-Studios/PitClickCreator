@@ -236,7 +236,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v37</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v38</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -567,6 +567,7 @@ let S = null;            // project
 let view = "show";
 let playhead = 0;        // render-time position in current view
 let selSec = null;
+const multiSec = new Set(), multiEnt = new Set();   // extra rows picked with Shift or Cmd/Ctrl-click, moved together
 let taps = [];
 const hist = [];
 
@@ -1286,6 +1287,7 @@ function renderMap(){
   const fk = focusKey();
   computeSrc();
   if (!secById(selSec)) selSec = S.sections[0] ? S.sections[0].id : null;
+  for (const id of [...multiSec]) if (!secById(id)) multiSec.delete(id);
   let bar = 1;
   $("#mapBody").innerHTML = S.sections.map((s, i) => {
     const a = bar; bar += s.bars;
@@ -1294,7 +1296,7 @@ function renderMap(){
     const nx = S.sections[i + 1];
     if (i > 0 && s.start - S.sections[i - 1].end > 0.01) tags.push(`<span class="badge dim" title="Free time before this section">hold</span>`);
     if (nx && nx.start < s.end - 0.01) tags.push(`<span class="badge" style="background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)" title="This section is longer than the space before ${esc(nx.label)}">runs into ${esc(nx.label)}</span>`);
-    return `<div class="row${s.id === selSec ? " sel" : ""}" data-sid="${s.id}">
+    return `<div class="row${s.id === selSec || multiSec.has(s.id) ? " sel" : ""}" data-sid="${s.id}">
       <span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Move ${esc(s.label)}. Drag, or use the arrow keys." title="Drag to reorder">⠿</span>
       <span class="mark">${esc(s.label)}</span>
       <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div>
@@ -1343,7 +1345,7 @@ function mapClick(e){
   const row = e.target.closest("[data-sid]"); if (!row) return;
   const id = row.dataset.sid; const a = e.target.closest("[data-a]");
   if (a && a.dataset.a === "grip") return;
-  if (!a){ if (row.closest("#mapBody") && selSec !== id){ selSec = id; renderAll(); } return; }
+  if (!a){ if (row.closest("#mapBody")) pickRows(e, S.sections.map(x => x.id), id, multiSec, () => selSec, v => selSec = v); return; }
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "off"){
@@ -1487,15 +1489,65 @@ function moveSectionTo(from, to){
   const g = document.querySelector(`#mapBody .row[data-sid="${moved.id}"] .grip`); if (g) g.focus();
 }
 function moveSection(i, dir){ moveSectionTo(i, i + dir); }
-// drag ⠿ to reorder rows in either list (arrow keys on the handle work too)
+// Shift-click picks a run of rows, Cmd/Ctrl-click adds or removes one. Plain click picks just that row.
+let pickHinted = false;
+function pickRows(e, ids, id, set, getSel, setSel){
+  const cur = getSel();
+  if (e.shiftKey && cur && cur !== id){
+    const a = ids.indexOf(cur), b = ids.indexOf(id); set.clear();
+    for (let k = Math.min(a, b); k <= Math.max(a, b); k++) if (ids[k] !== id) set.add(ids[k]);
+    setSel(id);
+  } else if (e.metaKey || e.ctrlKey){
+    if (id === cur){ const nx = [...set][0]; if (nx){ set.delete(nx); setSel(nx); } }
+    else if (set.has(id)) set.delete(id);
+    else { if (cur) set.add(cur); setSel(id); }
+  } else { if (!set.size && id === cur) return; set.clear(); setSel(id); }
+  set.delete(getSel());
+  if (set.size && !pickHinted){ pickHinted = true; toast(`${set.size + 1} picked. Drag any of them by ⠿ to move them together.`); }
+  renderAll();
+}
+// move every picked item as one block to a gap in the list (slot = 0..length); keeps their order
+function blockOrder(list, picked, slot){
+  const ins = list.slice(0, slot).filter(x => !picked.has(x)).length, rest = list.filter(x => !picked.has(x)), blk = list.filter(x => picked.has(x));
+  const out = [...rest.slice(0, ins), ...blk, ...rest.slice(ins)];
+  return out.every((x, k) => x === list[k]) ? null : out;
+}
+function blockSlot(list, picked, from, to, slot, dir){
+  const idx = list.map((x, k) => picked.has(x) ? k : -1).filter(k => k >= 0);
+  if (dir) return dir < 0 ? Math.max(0, idx[0] - 1) : Math.min(list.length, idx[idx.length - 1] + 2);
+  return slot != null ? slot : (to > from ? to + 1 : to);
+}
+function moveSecs(from, to, slot, dir){
+  const s0 = S.sections[from];
+  if (!(multiSec.size && (s0.id === selSec || multiSec.has(s0.id)))){ multiSec.clear(); return moveSectionTo(from, to); }
+  const picked = new Set(S.sections.filter(x => x.id === selSec || multiSec.has(x.id)));
+  const order = blockOrder(S.sections, picked, blockSlot(S.sections, picked, from, to, slot, dir)); if (!order) return;
+  mut(() => {
+    computeSrc();
+    const nudges = S.sections.map(x => x.nudge || 0), slots = S.sections.map(x => x.start);
+    S.sections = order;
+    S.sections.forEach((x, k) => { x.nudge = nudges[k]; delete x.pre; pin(x.id, slots[k]); }); S.sections[0].nudge = 0;
+  });
+  const g = document.querySelector(`#mapBody .row[data-sid="${s0.id}"] .grip`); if (g) g.focus();
+}
+function moveEnts(from, to, slot, dir){
+  const e0 = S.arr[from];
+  if (!(multiEnt.size && (e0.id === selEnt || multiEnt.has(e0.id)))){ multiEnt.clear(); return moveEntTo(from, to); }
+  const picked = new Set(S.arr.filter(x => x.id === selEnt || multiEnt.has(x.id)));
+  const order = blockOrder(S.arr, picked, blockSlot(S.arr, picked, from, to, slot, dir)); if (!order) return;
+  mut(() => { S.arr = order; });
+  const g = document.querySelector(`#ents .row[data-i="${S.arr.indexOf(e0)}"] .grip`); if (g) g.focus();
+}
+// drag ⠿ to reorder rows in either list (arrow keys on the handle work too); picked rows travel together
 function rowDragger(list, moveTo){
   let rd = null;
   list.addEventListener("pointerdown", e => {
     const g = e.target.closest(".grip"); if (!g || locked) return;
     e.preventDefault();
     const row = g.closest(".row"), rows = [...list.querySelectorAll(".row")];
-    rd = {from:rows.indexOf(row), to:rows.indexOf(row), id:e.pointerId};
+    rd = {from:rows.indexOf(row), to:rows.indexOf(row), slot:null, id:e.pointerId};
     g.setPointerCapture(e.pointerId); row.classList.add("lifting"); document.body.classList.add("rowdrag");
+    if (row.classList.contains("sel")) list.querySelectorAll(".row.sel").forEach(r => r.classList.add("lifting"));
   });
   list.addEventListener("pointermove", e => {
     if (!rd || e.pointerId !== rd.id) return;
@@ -1503,25 +1555,25 @@ function rowDragger(list, moveTo){
     rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
     let slot = rows.length;
     for (let i = 0; i < rows.length; i++){ const b = rows[i].getBoundingClientRect(); if (e.clientY < b.top + b.height / 2){ slot = i; break; } }
-    const target = slot > rd.from ? slot - 1 : slot; rd.to = target;
+    const target = slot > rd.from ? slot - 1 : slot; rd.to = target; rd.slot = slot;
     if (target !== rd.from){ if (slot < rows.length) rows[slot].classList.add("drop-before"); else rows[rows.length - 1].classList.add("drop-after"); }
     if (e.clientY > window.innerHeight - 40) window.scrollBy(0, 14); else if (e.clientY < 40) window.scrollBy(0, -14);
   });
   const end = e => {
     if (!rd || e.pointerId !== rd.id) return;
-    const {from, to} = rd; rd = null;
+    const {from, to, slot} = rd; rd = null;
     document.body.classList.remove("rowdrag");
     list.querySelectorAll(".row").forEach(r => r.classList.remove("lifting", "drop-before", "drop-after"));
-    if (to !== from) moveTo(from, to);
+    if (to !== from || list.querySelectorAll(".row.sel").length > 1) moveTo(from, to, slot);
   };
   list.addEventListener("pointerup", end); list.addEventListener("pointercancel", end);
   list.addEventListener("keydown", e => {
     const g = e.target.closest(".grip"); if (!g || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
     e.preventDefault(); const rows = [...list.querySelectorAll(".row")], i = rows.indexOf(g.closest(".row"));
-    moveTo(i, i + (e.key === "ArrowUp" ? -1 : 1));
+    moveTo(i, i + (e.key === "ArrowUp" ? -1 : 1), null, e.key === "ArrowUp" ? -1 : 1);
   });
 }
-rowDragger($("#mapBody"), (from, to) => { moveSectionTo(from, to); if (S.set.autoLabel !== false) toast(`Moved. Letters now run A to ${letterFor(S.sections.length - 1)} from the top.`); });
+rowDragger($("#mapBody"), (from, to, slot, dir) => { moveSecs(from, to, slot, dir); if (S.set.autoLabel !== false) toast(`Moved. Letters now run A to ${letterFor(S.sections.length - 1)} from the top.`); });
 function moveEntTo(from, to){
   to = clamp(to, 0, S.arr.length - 1); if (from === to) return;
   const e = S.arr[from];
@@ -1580,10 +1632,11 @@ function renderArr(){
   const r = build("show");
   const span = {}; r.forEach(c => { if (c.ent == null || c.kind === "gap") return; const o = span[c.ent] || (span[c.ent] = {a:c.bar, b:c.bar}); o.b = c.bar + c.bars - 1; });
   if (!S.arr.some(e => e.id === selEnt)) selEnt = S.arr[0] ? S.arr[0].id : null;
+  for (const id of [...multiEnt]) if (!S.arr.some(e => e.id === id)) multiEnt.delete(id);
   $("#ents").innerHTML = S.arr.map((e, i) => {
     const sp = span[i] ? `mm. ${span[i].a}–${span[i].b}` : "not playing";
     const grip = `<span class="grip" data-a="grip" tabindex="0" role="button" aria-label="Move this entry. Drag, or use the arrow keys." title="Drag to reorder">⠿</span>`;
-    const sel = e.id === selEnt ? " sel" : "";
+    const sel = e.id === selEnt || multiEnt.has(e.id) ? " sel" : "";
     if (e.kind === "click"){
       return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark click">${esc(e.label || "+")}</span>
         <div style="min-width:0"><div class="nm">${esc(e.name || "Click bars")}</div><div class="meta">${sp} · ${e.bars} bars · ${esc(sigTxt(e))} · ${tempoHTML(e)}</div></div>
@@ -1666,7 +1719,7 @@ function showClick(ev){
   const row = ev.target.closest("[data-i]"); if (!row) return;
   const i = +row.dataset.i, a = ev.target.closest("[data-a]");
   if (a && a.dataset.a === "grip") return;
-  if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderAll(); } return; }
+  if (!a){ if (row.closest("#ents") && S.arr[i]) pickRows(ev, S.arr.map(x => x.id), S.arr[i].id, multiEnt, () => selEnt, v => selEnt = v); return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
   if (a.dataset.a === "feel"){ const en = S.arr[i]; mut(() => editMeter(en, "clickOn", a.dataset.v)); return; }
   if (a.dataset.a === "ends"){ const en = S.arr[i]; mut(() => { en.vt = vtOf(en) || "vamp"; en.open = a.dataset.m === "go"; en.safety = !en.open; }); return; }
@@ -1724,7 +1777,7 @@ function showChange(ev){
 $("#ents").addEventListener("click", showClick);
 $("#showInsp").addEventListener("click", showClick);
 $("#showInsp").addEventListener("change", showChange);
-rowDragger($("#ents"), moveEntTo);
+rowDragger($("#ents"), moveEnts);
 $("#addEnt").onclick = () => { const id = $("#addSel").value; if (!id) return; const e = {id:uid(), kind:"sec", sec:id, repeat:1, open:false, skipStart:0, skipEnd:0}; mut(() => { S.arr.push(e); selEnt = e.id; }); };
 $("#addIntro").onclick = () => {
   const first = S.arr.find(e => e.kind === "click" || secById(e.sec));
