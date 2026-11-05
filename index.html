@@ -228,7 +228,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v21</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v22</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -342,7 +342,7 @@ body.locked .pane .card{opacity:.75}
         <label class="inline"><input type="checkbox" id="setAccent"> Accent beat 1</label>
         <label><span class="lbl">Click level</span><input type="range" id="setClickVol" min="0" max="1" step="0.01"></label>
         <label><span class="lbl">Track level</span><input type="range" id="setTrackVol" min="0" max="1" step="0.01"></label>
-        <label class="inline"><input type="checkbox" id="setSplit"> Click left / track right</label>
+        <label class="inline" title="Only while the track is up. With the track level at zero the click stays in both ears."><input type="checkbox" id="setSplit"> Click left / track right</label>
       </div>
     </div>
     <div class="card">
@@ -712,7 +712,9 @@ function ac(){
 function applyMix(){
   if (!actx || !S) return;
   trackBus.gain.value = S.set.trackVol; clickBus.gain.value = S.set.clickVol;
-  trackPan.pan.value = S.set.split ? 1 : 0; clickPan.pan.value = S.set.split ? -1 : 0;
+  // split click/track only while the track can be heard; click on its own sits in both ears
+  const split = S.set.split && S.set.trackVol > 0.001;
+  trackPan.pan.value = split ? 1 : 0; clickPan.pan.value = split ? -1 : 0;
 }
 function clickSamples(sr, sound){
   const mk = (parts, dur, amp) => {
@@ -1527,8 +1529,8 @@ function renderSettings(){
   $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
   $("#qlNum").value = s.qlNum || "1";
   $("#qlTrack").value = s.qlTrack === "foh" ? "foh" : "none";
-  $("#qlRoute").textContent = qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, on output 1 for the in-ears. The track stays out of QLab.";
-  $("#qlPatch").textContent = qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch output 1 to the in-ear mix.";
+  $("#qlRoute").textContent = qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, in both ears (outputs 1 and 2). The track stays out of QLab.";
+  $("#qlPatch").textContent = qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch outputs 1 and 2 (left and right) to the in-ear mix.";
   renderQlabPreview();
   document.querySelectorAll("[data-ci-host]").forEach(h => {
     const lbl = h.querySelector(".cil"); const n = s.countIn | 0;
@@ -2149,7 +2151,7 @@ const ascii = v => String(v ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g,
 const fileSafe = v => ascii(v).replace(/[\\/:*?"<>|]+/g, "-").trim() || "Song";
 const asq = v => ascii(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 const qlFOH = () => S.set.qlTrack === "foh";
-const qlRouting = () => qlFOH() ? "Click is on output 1 (in-ears), track on output 2 (FOH)." : "Click only, on output 1 (in-ears). The track is not in the file.";
+const qlRouting = () => qlFOH() ? "Click is on output 1 (in-ears), track on output 2 (FOH)." : "Click only, on outputs 1 and 2 (both ears of the in-ears). The track is not in the file.";
 const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? track.name : "Demo song");
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
@@ -2205,7 +2207,7 @@ function qlabScript(cues, song){
 `-- 3. Press Run (the play button) in Script Editor. The first time, macOS asks to let`,
 `--    Script Editor control QLab: click Allow (or OK).`,
 `--`,
-`-- ${qlFOH() ? "Output 1 = click (band and MD in-ears). Output 2 = track (FOH)." : "Output 1 = click (band and MD in-ears). Click only: the track is not in these files."}`,
+`-- ${qlFOH() ? "Output 1 = click (band and MD in-ears). Output 2 = track (FOH)." : "Outputs 1 and 2 = click in both ears (band and MD in-ears). Click only: the track is not in these files."}`,
 ``,
 `property audioFiles : {${audio.map(c => `"${asq(c.file)}"`).join(", ")}}`,
 ``,
@@ -2281,13 +2283,16 @@ function qlabScript(cues, song){
 `		end try`,
 `		set q name of theCue to nm`,
 `		set notes of theCue to nt`,
-`		-- click (file channel 1) to output 1 only; the track (channel 2, if there is one) to output 2 only`,
+`		-- with a track: click (file channel 1) to output 1 only, track (channel 2) to output 2 only`,
+`		-- click only: the click goes to outputs 1 and 2, so it's in both ears`,
 `		try`,
 `			setLevel theCue row 1 column 1 db 0`,
-`			setLevel theCue row 1 column 2 db -120`,
 `			if withTrack then`,
+`				setLevel theCue row 1 column 2 db -120`,
 `				setLevel theCue row 2 column 1 db -120`,
 `				setLevel theCue row 2 column 2 db 0`,
+`			else`,
+`				setLevel theCue row 1 column 2 db 0`,
 `			end if`,
 `		end try`,
 `	end tell`,
@@ -2331,8 +2336,8 @@ function qlabScript(cues, song){
 }
 function cueSheet(cues, song){
   const out = [`${ascii(song)} - QLab cue sheet (made with Pit Click)`, ``,
-    `Output 1 = click -> band and MD in-ears. Never send it to FOH.`,
-    qlFOH() ? `Output 2 = track -> FOH.` : `Click only: the track was just a reference and is not in these files.`, ``,
+    ...(qlFOH() ? [`Output 1 = click -> band and MD in-ears. Never send it to FOH.`, `Output 2 = track -> FOH.`]
+      : [`Outputs 1 and 2 = click, in both ears -> band and MD in-ears. Never send it to FOH.`, `Click only: the track was just a reference and is not in these files.`]), ``,
     `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
   cues.forEach((c, i) => out.push(`${String(i + 1).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
   out.push(``, `Vamps loop in QLab until their "Leave vamp" cue is pressed. Press it only while that vamp is`,
