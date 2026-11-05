@@ -27,3 +27,12 @@ Step 3 has **Export for QLab**. It gives one zip with:
 
 Unzip into your show folder, open QLab 5 and the workspace, click the cue they should go after,
 then open the script in Script Editor and press Run.
+
+## Layout
+
+One screen, laid out like a DAW: control bar (transport, readout, count-in, Click and Export menus) along the top,
+the inspector on the left, and the timeline with the section list or running order in the middle.
+**Original** shows the recording as it is (tempo map); **Show** shows the running order.
+In the Show view the inspector has the running-order settings and the section's tempo and meter together.
+**Track: Straight through** plays the original recording under the click so extra vamp or safety passes
+don't stretch the song; exports always use the edited track.

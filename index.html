@@ -10,358 +10,368 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,700;6..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-/* Layout: transport strip, three step tabs, a full-width score lane, then per step a list with a details panel beside it */
+/* Layout: one screen like a DAW. Control bar (transport + LCD + menus) on top; inspector on the left;
+   timeline and the section / running-order list in the middle. Deliberately one dark studio look. */
 :root{
-  --paper:#E8ECF0; --panel:#F7F8FA; --ink:#141C27; --muted:#566273; --line:#C6CED8;
-  --amber:#B06C06; --amber-soft:rgba(176,108,6,.13); --vamp:#1C6884; --vamp-soft:rgba(28,104,132,.12);
-  --wave:#76849A; --band:rgba(20,28,39,.05); --danger:#A8281F; --on-ink:#F7F8FA; --grid:#000000;
+  --bg:#18181A; --panel:#242427; --raise:#2E2E32; --well:#111113; --line:#3A3A3F; --line2:#4A4A50;
+  --ink:#E9E9EC; --muted:#9C9CA4; --paper:#111113; --on-ink:#18181A;
+  --lcd:#0C1216; --lcd-ink:#D5E7F2; --lcd-dim:#6D8796;
+  --region:#2D5C87; --region-hi:#3B74A8; --wave:#8DB6DD;
+  --amber:#F2B13A; --amber-soft:rgba(242,177,58,.16); --vamp:#46C2D0; --vamp-soft:rgba(70,194,208,.15);
+  --safety:#B48CE8; --band:rgba(255,255,255,.035); --danger:#FF6B5E; --grid:#FFFFFF;
   --f-mark:"Bodoni Moda", Didot, "Bodoni 72", Georgia, serif;
   --f-ui:"IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-num:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme:dark;
 }
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --paper:#0F141B; --panel:#161D26; --ink:#E4E9EF; --muted:#94A1B2; --line:#2A3441;
-  --amber:#F0B040; --amber-soft:rgba(240,176,64,.14); --vamp:#62B4D2; --vamp-soft:rgba(98,180,210,.14);
-  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; --grid:#FFFFFF; color-scheme:dark } }
-:root[data-theme="dark"]{
-  --paper:#0F141B; --panel:#161D26; --ink:#E4E9EF; --muted:#94A1B2; --line:#2A3441;
-  --amber:#F0B040; --amber-soft:rgba(240,176,64,.14); --vamp:#62B4D2; --vamp-soft:rgba(98,180,210,.14);
-  --wave:#62718A; --band:rgba(228,233,239,.04); --danger:#F08A80; --on-ink:#0F141B; --grid:#FFFFFF; color-scheme:dark }
-
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 html,body{margin:0}
-body{background:var(--paper);color:var(--ink);font:14px/1.45 var(--f-ui);
-  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:14px 40px}
-.wrap{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+body{background:var(--bg);color:var(--ink);font:13px/1.45 var(--f-ui);
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:10px 32px}
+.app{max-width:1600px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 .num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
 small,.muted{color:var(--muted)}
-.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
 
-header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
-.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
-.brand h1{font:800 28px/1 var(--f-mark);margin:0;letter-spacing:-.01em}
-.ver{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
-.brand .trk{color:var(--muted);font-size:13px;max-width:36ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-.btn{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:6px 11px;cursor:pointer;white-space:nowrap;line-height:1.3}
-.btn:hover{border-color:var(--muted)}
-.btn.sm{padding:3px 8px;font-size:12.5px}
-.btn.primary{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
-.btn:disabled{opacity:.45;cursor:default}
-#lockBtn[aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:var(--on-ink);font-weight:600}
-body.locked .panel.lockable{opacity:.72}
-.lockbar{display:none;background:var(--amber-soft);border:1px solid var(--amber);border-radius:8px;padding:7px 12px;font-size:13px;font-weight:500}
-body.locked .lockbar{display:block}
+.btn{border:1px solid var(--line2);background:linear-gradient(var(--raise),#28282C);border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;line-height:1.3;color:var(--ink)}
+.btn:hover{border-color:#6A6A72}
+.btn.sm{padding:3px 8px;font-size:12px}
+.btn.primary{background:var(--ink);color:var(--on-ink);border-color:var(--ink);font-weight:600}
+.btn:disabled{opacity:.4;cursor:default}
 .btn.danger{color:var(--danger)}
+.btn[aria-expanded="true"]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
+#lockBtn[aria-pressed="true"]{background:var(--amber);border-color:var(--amber);color:var(--on-ink);font-weight:600}
 label.file{position:relative;overflow:hidden}
 label.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
-label.file.disabled{opacity:.45;pointer-events:none}
+label.file.disabled{opacity:.4;pointer-events:none}
+.lockbar{display:none;background:var(--amber-soft);border:1px solid var(--amber);border-radius:8px;padding:6px 12px;font-size:12.5px;font-weight:500}
+body.locked .lockbar{display:block}
+body.locked .inspector, body.locked .tools{opacity:.75}
 
-/* rehearsal mark */
 .mark{display:inline-grid;place-items:center;min-width:1.75em;height:1.75em;padding:0 .3em;border:2px solid var(--ink);font:800 15px/1 var(--f-mark);flex:none}
 .mark.vamp{border-color:var(--vamp);color:var(--vamp)}
+.mark.safety{border-color:var(--safety);color:var(--safety)}
 .mark.click{border-style:dashed}
 
-/* transport */
-.transport{display:flex;flex-wrap:wrap;align-items:stretch;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-.tbtns{display:flex;gap:6px;align-items:center}
-.tbtns .btn{min-width:44px;height:44px;font-size:16px}
-.go{background:var(--amber);border-color:var(--amber);color:var(--on-ink);font-weight:600;letter-spacing:.06em;min-width:72px!important}
+/* control bar */
+.ctrl{display:grid;grid-template-columns:auto auto minmax(0,1fr);grid-template-areas:"left mid right";align-items:center;gap:10px 14px;background:linear-gradient(#2A2A2E,#222225);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.ctl-left,.ctl-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.ctl-left{grid-area:left}.ctl-right{grid-area:right;justify-content:flex-end;row-gap:6px}.ctl-mid{grid-area:mid}
+.ctl-right{justify-content:flex-end}
+.brand{display:flex;flex-direction:column;min-width:0;margin-right:6px}
+.brand h1{font:800 20px/1 var(--f-mark);margin:0;display:flex;align-items:baseline;gap:6px}
+.ver{font:500 10px var(--f-num);color:var(--muted);border:1px solid var(--line2);border-radius:4px;padding:1px 4px}
+.brand .trk{color:var(--muted);font-size:11.5px;max-width:28ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctl-mid{display:flex;align-items:center;gap:10px}
+.tbtns{display:flex;gap:4px}
+.tbtns .btn{min-width:38px;height:38px;font-size:15px;padding:0 10px}
+.go{background:var(--amber)!important;border-color:var(--amber)!important;color:var(--on-ink)!important;font-weight:700;letter-spacing:.06em;min-width:62px!important}
 .go.wait{animation:pulse 1s ease-in-out infinite}
 .go.armed{box-shadow:0 0 0 3px var(--amber-soft)}
 @keyframes pulse{50%{box-shadow:0 0 0 6px var(--amber-soft)}}
 @media (prefers-reduced-motion:reduce){.go.wait{animation:none;box-shadow:0 0 0 4px var(--amber-soft)}}
-.readout{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:0 6px;border-left:1px solid var(--line)}
-.ro{display:flex;flex-direction:column;gap:1px}
-.ro b{font:600 22px/1.1 var(--f-num);font-variant-numeric:tabular-nums}
-.ro.big b{font-size:30px}
-.ro .sec{display:flex;align-items:center;gap:8px;font-weight:600;font-size:15px;min-height:30px}
-.status{font-size:12.5px;color:var(--vamp);font-weight:600;min-height:1.2em}
-.views{margin-left:auto;display:flex;align-items:center}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
-.seg button{border:0;background:transparent;padding:7px 12px;cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
-.ci{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
-.ci .cil{font-size:13px;color:var(--muted)}
-.ci .seg button{padding:6px 11px;font-size:13px}
-.ci .seg button:not(:last-child){border-right:1px solid var(--line)}
-.ci input{width:3.6em}
+.lcd{display:flex;align-items:center;gap:16px;background:var(--lcd);border:1px solid #23313A;border-radius:8px;padding:5px 14px;color:var(--lcd-ink);box-shadow:inset 0 1px 6px rgba(0,0,0,.6);min-height:52px}
+.ro{display:flex;flex-direction:column;gap:0}
+.ro .lbl{color:var(--lcd-dim);font-size:9.5px}
+.ro b{font:500 15px/1.15 var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lcd{flex:none;gap:14px}
+.ro.big{min-width:8.6em}
+.ro.big b{font-size:24px;font-weight:600}
+.ro .sec{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px;min-height:24px;white-space:nowrap}
+.ro .sec .mark{font-size:12px;border-color:var(--lcd-ink)}
+.ro .sec .badge{font-size:10px}
+.ro b .tmark svg.nglyph{height:1.2em}
+.status{font-size:11.5px;color:var(--vamp);font-weight:600;max-width:20ch;line-height:1.25}
+.status:empty{display:none}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:6px;overflow:hidden;background:var(--well)}
+.seg button{border:0;background:transparent;padding:5px 10px;cursor:pointer;color:var(--muted)}
+.seg button:not(:last-child){border-right:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink);font-weight:600}
+.ci{display:inline-flex;align-items:center;gap:6px}
+.ci .cil{font-size:11.5px;color:var(--muted)}
+.ci input{width:3.4em}
 .tsep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
+@media (max-width:1320px){.ctrl{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"left right" "mid mid"}}
+@media (max-width:760px){.ctrl{grid-template-columns:minmax(0,1fr);grid-template-areas:"left" "mid" "right"}.ctl-right{justify-content:flex-start}.ctl-mid{flex-wrap:wrap;min-width:0}
+  .lcd{flex:1 1 100%;flex-wrap:wrap;gap:4px 14px;min-width:0}.ro.big{min-width:0}.ro.big b{font-size:20px}}
+
+/* popovers from the control bar */
+.pop{position:fixed;z-index:35;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:0 18px 50px rgba(0,0,0,.55);width:min(560px,calc(100vw - 24px));max-height:calc(100vh - 90px);overflow:auto}
+.pop h2{font:700 16px/1.2 var(--f-mark);margin:0;padding:12px 14px 2px}
+.pop .sub{margin:0;padding:2px 14px 8px;color:var(--muted);font-size:12px}
+.pop .sect{border-top:1px solid var(--line)}
+.mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px 16px;padding:8px 14px 14px}
+.mix label{display:flex;flex-direction:column;gap:5px}
+.mix .inline{flex-direction:row;align-items:center;gap:8px}
+input[type=range]{width:100%;accent-color:var(--amber)}
+.checks{display:flex;flex-direction:column;gap:7px;padding:4px 14px 10px}
+.checks label{display:flex;gap:8px;align-items:baseline}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px}
+.note{font-size:12px;color:var(--muted);padding:0 14px 12px;margin:0}
+.qlist{display:flex;flex-direction:column;margin:0 14px 4px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qlist:empty{display:none}
+.qrow{display:grid;grid-template-columns:3.8em 4.5em minmax(0,1fr);gap:10px;align-items:baseline;padding:7px 10px;border-bottom:1px solid var(--line);font-size:12.5px}
+.qrow:last-child{border-bottom:0}
+.qrow .qgo{font-weight:700;color:var(--amber)}
+.qrow .qn{color:var(--muted)}
+.qrow.dv{background:var(--vamp-soft)}
+.qrow.dv .qw{color:var(--vamp)}
+.steps-mini{margin:0;padding:2px 14px 14px 32px;color:var(--muted);font-size:12px;display:flex;flex-direction:column;gap:2px}
+
+/* workspace */
+.work{display:grid;grid-template-columns:330px minmax(0,1fr);gap:10px;align-items:start}
+@media (max-width:980px){.work{grid-template-columns:minmax(0,1fr)}.inspector{order:2;position:static!important;max-height:none!important}}
+.inspector{background:var(--panel);border:1px solid var(--line);border-radius:10px;position:sticky;top:10px;max-height:calc(100vh - 20px);overflow:auto;min-width:0}
+.insp-title{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);background:#2A2A2E;position:sticky;top:0;z-index:2}
+.arrange{display:flex;flex-direction:column;gap:10px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+.tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--line);background:#2A2A2E}
+.tools .grow{flex:1}
+.arrhead{display:flex;align-items:center;gap:12px;padding:7px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.seg.big button{padding:6px 16px;font-size:13px}
+.vdesc{color:var(--muted);font-size:12px}
+.tools .inline{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted)}
 
 /* lane */
-.lanebox{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.lanehead{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line)}
+.lanehead{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line)}
 .lanehead .zoom{display:flex;align-items:center;gap:8px;margin-left:auto}
-.lane{overflow-x:auto;overflow-y:hidden;position:relative}
-.laneinner{position:relative;height:178px}
-.laneinner{touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
+.lane{overflow-x:auto;overflow-y:hidden;position:relative;background:var(--well)}
+.laneinner{position:relative;height:220px;touch-action:pan-y;cursor:ew-resize;user-select:none;-webkit-user-select:none}
 .laneinner canvas{display:block;position:absolute;top:0;left:0}
 .laneinner.dragging{cursor:grabbing}
 .ph{position:absolute;top:0;bottom:0;width:2px;background:var(--amber);transform:translateX(-1px);cursor:grab}
 .ph::before{content:"";position:absolute;top:0;left:-7px;border:8px solid transparent;border-top:11px solid var(--amber)}
 .ph::after{content:"";position:absolute;top:0;bottom:0;left:-9px;width:20px}
 .laneinner.dragging .ph{cursor:grabbing}
+.keys{font-size:11.5px;color:var(--muted);display:flex;gap:4px 12px;flex-wrap:wrap}
+kbd{font:500 10.5px var(--f-num);border:1px solid var(--line2);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:var(--raise)}
 
-/* steps */
-.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.step{display:flex;gap:10px;align-items:center;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 14px;cursor:pointer;min-width:0}
-.step .n{flex:none;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--muted);font:600 13px var(--f-num);color:var(--muted)}
-.step b{display:block;font-size:15px}
-.step small{display:block;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.step[aria-selected="true"]{border-color:var(--ink);box-shadow:inset 0 -3px 0 var(--amber)}
-.step[aria-selected="true"] .n{background:var(--ink);border-color:var(--ink);color:var(--on-ink)}
-@media (max-width:700px){.step small{display:none}.step{padding:8px 10px}}
-
-/* workspace: list on the left, details on the right */
-.pane{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:14px;align-items:start}
-@media (max-width:960px){.pane{grid-template-columns:minmax(0,1fr)}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
-.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
-.tools .grow{flex:1}
-.tools .inline{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
-.hint{margin:0;padding:8px 14px;font-size:12.5px;color:var(--muted);border-bottom:1px solid var(--line)}
+/* lists */
 .list{display:flex;flex-direction:column}
-.row{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:9px 12px 9px 8px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
+.row{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 10px 7px 6px;border-bottom:1px solid var(--line);cursor:pointer;position:relative}
 .row:last-child{border-bottom:0}
 .row:hover{background:var(--band)}
-.row.sel{background:var(--amber-soft)}
-.row.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--amber)}
+.row.sel{background:rgba(59,116,168,.28)}
+.row.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--region-hi)}
 .row.now .mark{background:var(--amber);border-color:var(--amber);color:var(--on-ink)}
 .row .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .nm.muted{font-weight:500}
-.row .meta{font:12px var(--f-num);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .meta{font:11.5px var(--f-num);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .meta svg.nglyph{height:1.35em}
 .row .tags{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
 .row.lifting{opacity:.4}
 .row.drop-before{box-shadow:inset 0 3px 0 var(--amber)}
 .row.drop-after{box-shadow:inset 0 -3px 0 var(--amber)}
-.empty{padding:22px 14px;color:var(--muted)}
-.grip{cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding:6px 3px;border-radius:4px;touch-action:none;user-select:none}
+.empty{padding:20px 14px;color:var(--muted)}
+.grip{cursor:grab;color:var(--muted);font-size:17px;line-height:1;padding:5px 3px;border-radius:4px;touch-action:none;user-select:none}
 .grip:hover{color:var(--ink);background:var(--band)}
 body.rowdrag, body.rowdrag *{cursor:grabbing!important}
-.badge{font:600 11px/1 var(--f-num);padding:4px 6px;border-radius:4px;background:var(--vamp-soft);color:var(--vamp);white-space:nowrap}
+.badge{font:600 10.5px/1 var(--f-num);padding:4px 6px;border-radius:4px;background:var(--vamp-soft);color:var(--vamp);white-space:nowrap}
 .badge.click{background:var(--amber-soft);color:var(--amber)}
+.badge.safety{background:rgba(180,140,232,.16);color:var(--safety)}
 .badge.dim{background:var(--band);color:var(--muted)}
 
-/* details panel */
-.insp{position:sticky;top:12px}
-.insp-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
-.insp-head input{flex:1;font-weight:600;font-size:15px}
-.insp-head .lab{width:3.4em;font:800 15px var(--f-mark);text-align:center;flex:none}
-.group{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
+/* inspector contents */
+.insp-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.insp-head input{flex:1;font-weight:600;font-size:14px}
+.insp-head .lab{width:3.4em;font:800 14px var(--f-mark);text-align:center;flex:none}
+.insp-sub{padding:7px 12px;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--lcd-dim);background:#1F1F22;border-bottom:1px solid var(--line);font-weight:600}
+.group{padding:10px 12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
 .group:last-child{border-bottom:0}
-.group h3{margin:0;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
-.f{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.f > span:first-child{min-width:92px;color:var(--muted);font-size:13px}
-.btns{display:flex;flex-wrap:wrap;gap:6px}
-.insp .note{padding:0;font-size:12px}
+.group h3{margin:0;font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600;cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px}
+.group h3::before{content:"▾";font-size:10px;width:10px;display:inline-block}
+.group.closed h3::before{content:"▸"}
+.group.closed > :not(h3){display:none!important}
+.f{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.f > span:first-child{min-width:88px;color:var(--muted);font-size:12.5px}
+.btns{display:flex;flex-wrap:wrap;gap:5px}
+.inspector .note{padding:0;font-size:11.5px}
+.insp-empty{padding:26px 16px;color:var(--muted);text-align:center}
 svg.nglyph{height:1.3em;width:auto;vertical-align:-0.28em;flex:none}
-svg.nglyph.big{height:26px}
+svg.nglyph.big{height:24px}
 .tmark{display:inline-flex;align-items:baseline;gap:.2em;white-space:nowrap}
 .tmark svg.nglyph{align-self:center}
 .tmark i{font-family:var(--f-mark);font-style:italic;font-weight:700}
-.tbig{font:600 22px var(--f-num);padding:2px 0 4px}
-.tbig svg.nglyph{height:34px}
+.tbig{font:600 20px var(--f-num);padding:2px 0 2px}
+.tbig svg.nglyph{height:30px}
 .notepick{display:inline-flex;gap:3px;flex-wrap:wrap}
+.np{border:1px solid var(--line2);background:var(--well);border-radius:6px;width:32px;height:38px;display:grid;place-items:center;cursor:pointer;color:var(--ink);padding:0}
+.np:hover{border-color:var(--muted)}
+.np.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
 .sigbox{display:inline-flex;align-items:stretch}
 .sigbox input{border-top-right-radius:0;border-bottom-right-radius:0}
-.sigdrop{border:1px solid var(--line);border-left:0;background:var(--paper);border-radius:0 5px 5px 0;padding:0 7px;cursor:pointer;color:var(--muted);font-size:12px}
+.sigdrop{border:1px solid var(--line2);border-left:0;background:var(--well);border-radius:0 5px 5px 0;padding:0 7px;cursor:pointer;color:var(--muted);font-size:12px}
 .sigdrop:hover{color:var(--ink)}
-.sigpop{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.22);padding:8px;width:236px}
+.sigpop{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line2);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px;width:236px}
 .sigpop h4{margin:4px 2px 5px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .sigpop .sg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px}
-.sigpop button{border:1px solid var(--line);background:var(--paper);border-radius:6px;padding:7px 0;font:600 14px var(--f-num);color:var(--ink);cursor:pointer}
+.sigpop button{border:1px solid var(--line2);background:var(--well);border-radius:6px;padding:7px 0;font:600 14px var(--f-num);color:var(--ink);cursor:pointer}
 .sigpop button:hover,.sigpop button.hi{border-color:var(--ink)}
 .sigpop button.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
 .sigpop p{margin:2px 2px 0;font-size:11.5px;color:var(--muted)}
-.np{border:1px solid var(--line);background:var(--paper);border-radius:6px;width:34px;height:40px;display:grid;place-items:center;cursor:pointer;color:var(--ink);padding:0}
-.np:hover{border-color:var(--muted)}
-.np.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}
-.ro b .tmark svg.nglyph{height:1.25em}
-.insp-empty{padding:28px 16px;color:var(--muted);text-align:center}
 
-input[type=number],input[type=text]{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:5px 7px;min-width:0}
+input[type=number],input[type=text]{border:1px solid var(--line2);background:var(--well);border-radius:5px;padding:4px 7px;min-width:0}
 input[type=number]{font-family:var(--f-num);font-variant-numeric:tabular-nums;width:5em}
 input.w6{width:6.4em}
-select{border:1px solid var(--line);background:var(--paper);border-radius:5px;padding:5px 6px}
+select{border:1px solid var(--line2);background:var(--well);border-radius:5px;padding:4px 6px}
+input[type=checkbox]{accent-color:var(--amber)}
 
 .taps{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .tapbtn.hit{background:var(--amber-soft)}
-.tapinfo{font:12.5px var(--f-num);color:var(--muted)}
+.tapinfo{font:12px var(--f-num);color:var(--muted)}
 
-/* step 3 */
-.out{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
-.out .qlab{grid-column:1 / -1}
-.qlist{display:flex;flex-direction:column;margin:0 14px 4px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.qlist:empty{display:none}
-.qrow{display:grid;grid-template-columns:4.2em 4.5em minmax(0,1fr);gap:10px;align-items:baseline;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13.5px}
-.qrow:last-child{border-bottom:0}
-.qrow .qgo{font-weight:700;color:var(--amber)}
-.qrow .qn{color:var(--muted)}
-.qrow.dv{background:var(--vamp-soft)}
-.qrow.dv .qw{color:var(--vamp)}
-.steps-mini{margin:0;padding:4px 14px 16px 34px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:3px}
-@media (max-width:860px){.out{grid-template-columns:minmax(0,1fr)}}
-.card > h2{font:700 19px/1.2 var(--f-mark);margin:0;padding:14px 14px 4px}
-.card > .sub{margin:0;padding:0 14px 10px;color:var(--muted);font-size:12.5px}
-.mix{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px 18px;padding:8px 14px 16px}
-.mix label{display:flex;flex-direction:column;gap:5px}
-.mix .inline{flex-direction:row;align-items:center;gap:8px}
-input[type=range]{width:100%;accent-color:var(--amber)}
-.checks{display:flex;flex-direction:column;gap:8px;padding:6px 14px 12px}
-.checks label{display:flex;gap:8px;align-items:baseline}
-.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 14px;border-top:1px solid var(--line)}
-.note{font-size:12.5px;color:var(--muted);padding:0 14px 14px;margin:0}
-.keys{font-size:12px;color:var(--muted);display:flex;gap:6px 14px;flex-wrap:wrap}
-kbd{font:500 11px var(--f-num);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:1px 5px;background:var(--panel)}
-body.locked .pane .card{opacity:.75}
-.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:9px 14px;border-radius:8px;font-size:13px;max-width:min(560px,calc(100vw - 32px));z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--ink);color:var(--on-ink);padding:9px 14px;border-radius:8px;font-size:13px;max-width:min(560px,calc(100vw - 32px));z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.4)}
 .drop{position:fixed;inset:0;background:var(--amber-soft);border:3px dashed var(--amber);z-index:30;display:grid;place-items:center;font:700 24px var(--f-mark);pointer-events:none}
-.busy{position:fixed;inset:0;background:color-mix(in srgb,var(--paper) 70%,transparent);display:grid;place-items:center;z-index:25;font-weight:600}
+.busy{position:fixed;inset:0;background:rgba(17,17,19,.7);display:grid;place-items:center;z-index:45;font-weight:600}
 </style>
 </head>
 <body>
 
 
-<div class="wrap">
-  <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v25</span><span class="trk" id="trkName">Demo track</span></div>
-    <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
-    <button class="btn" id="demoBtn">Demo</button>
-    <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
-    <button class="btn" id="lockBtn" aria-pressed="false" title="Lock the show so nothing can be changed by accident">Lock</button>
+<div class="app">
+  <header class="ctrl" aria-label="Control bar">
+    <div class="ctl-left">
+      <div class="brand"><h1>Pit Click <span class="ver">v26</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
+      <button class="btn" id="demoBtn">Demo</button>
+    </div>
+    <div class="ctl-mid">
+      <div class="tbtns" aria-label="Transport">
+        <button class="btn" id="homeBtn" title="Back to start (Home)" aria-label="Back to start">⏮</button>
+        <button class="btn primary" id="playBtn" title="Play / pause (Space)" aria-label="Play">▶</button>
+        <button class="btn" id="stopBtn" title="Stop where you are (⏮ goes back to the start)" aria-label="Stop">■</button>
+        <button class="btn go" id="goBtn" title="GO: leave a vamp, skip the rest of a safety, or carry on from a stop (G)">GO</button>
+      </div>
+      <div class="lcd" aria-live="polite">
+        <div class="ro big"><span class="lbl">Bar · beat</span><b id="roBar">m. 1 · 1</b></div>
+        <div class="ro"><span class="lbl">Section</span><span class="sec" id="roSec">—</span></div>
+        <div class="ro"><span class="lbl">Tempo · sig</span><b id="roBpm">—</b></div>
+        <div class="ro"><span class="lbl">Time</span><b id="roTime">0:00.0</b></div>
+        <div class="ro"><span class="status" id="roStatus"></span></div>
+      </div>
+    </div>
+    <div class="ctl-right">
+      <span class="ci" data-ci-host data-ci-compact title="Count-in before the song (other lengths in the Click menu)"><span class="cil">Count-in</span></span>
+      <button class="btn" data-pop="clickPop" id="clickBtn" aria-expanded="false">Click ▾</button>
+      <button class="btn" data-pop="exportPop" id="exportMenuBtn" aria-expanded="false">Export ▾</button>
+      <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
+      <button class="btn" id="lockBtn" aria-pressed="false" title="Lock the show so nothing can be changed by accident">Lock</button>
+    </div>
   </header>
 
   <div class="lockbar" role="status">Show is locked. Play, stop, GO, levels and export still work. Press Unlock to edit.</div>
-  <section class="transport" aria-label="Transport">
-    <div class="tbtns">
-      <button class="btn" id="homeBtn" title="Back to start (Home)" aria-label="Back to start">⏮</button>
-      <button class="btn primary" id="playBtn" title="Play / pause (Space)" aria-label="Play">▶</button>
-      <button class="btn" id="stopBtn" title="Stop where you are (⏮ goes back to the start)" aria-label="Stop">■</button>
-      <button class="btn go" id="goBtn" title="Go — leave the vamp at the end of this pass (G)">GO</button>
-    </div>
-    <div class="readout">
-      <div class="ro big"><span class="lbl">Bar · beat</span><b id="roBar">m. 1 · 1</b></div>
-      <div class="ro"><span class="lbl">Section</span><span class="sec" id="roSec">—</span></div>
-      <div class="ro"><span class="lbl">Tempo</span><b id="roBpm" style="font-size:18px">—</b></div>
-      <div class="ro"><span class="lbl">Time</span><b id="roTime" style="font-size:18px">0:00.0</b></div>
-      <div class="ro"><span class="lbl">&nbsp;</span><span class="status" id="roStatus"></span></div>
-    </div>
-  </section>
 
-  <nav class="steps" role="tablist" aria-label="Steps">
-    <button class="step" role="tab" id="tabMap" data-tab="map" aria-selected="false"><span class="n">1</span><span><b>Map the track</b><small>Bar 1, tempos and time signatures</small></span></button>
-    <button class="step" role="tab" id="tabShow" data-tab="show" aria-selected="true"><span class="n">2</span><span><b>Build the show</b><small>Order, repeats, vamps and cuts</small></span></button>
-    <button class="step" role="tab" id="tabOut" data-tab="out" aria-selected="false"><span class="n">3</span><span><b>Click &amp; export</b><small>Sound, levels and files</small></span></button>
-  </nav>
+  <main class="work">
+    <aside class="inspector" aria-label="Inspector">
+      <div class="insp-title"><span class="lbl">Inspector</span><small id="inspHint">Click a row or a section on the timeline</small></div>
+      <div id="showInsp"></div>
+      <div id="mapInspWrap"><div class="insp-sub" id="mapInspSub" hidden>Section · tempo and meter</div><div id="mapInsp"></div></div>
+    </aside>
 
-  <section class="lanebox">
-    <div class="lanehead">
-      <span class="lbl" id="laneLbl">Show running order</span>
-      <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · pinch to zoom</span></span>
-      <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="0" max="100" step="0.1" value="0" style="width:140px" aria-label="Zoom"></label>
-    </div>
-    <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
-  </section>
+    <section class="arrange">
+      <div class="card">
+        <div class="arrhead">
+          <span class="seg big" role="group" aria-label="View">
+            <button type="button" class="vbtn" data-tab="map" id="tabMap" aria-pressed="false">Original</button>
+            <button type="button" class="vbtn" data-tab="show" id="tabShow" aria-pressed="true">Show</button>
+          </span>
+          <span class="vdesc" id="viewDesc">The show as you'll play it: order, repeats, vamps, safeties, cuts and stops.</span>
+        </div>
+        <div class="tools" id="mapTools" hidden>
+          <button class="btn" id="detectAll">Auto-detect tempo</button>
+          <button class="btn primary" id="lineUpAll" title="Snap every section's beats onto the hits in the audio">Line up all</button>
+          <label class="inline" title="Also fine-tune each section's tempo while lining up"><input type="checkbox" id="fitTempo" checked> fit tempo</label>
+          <span class="tsep"></span>
+          <button class="btn" id="splitBtn" title="Split the section under the playhead (S)">Split</button>
+          <button class="btn" id="addSec">Add section</button>
+          <span class="taps">
+            <button class="btn tapbtn" id="tapBtn" title="Tap along while it plays (T)">Tap</button>
+            <span class="tapinfo" id="tapInfo"></span>
+            <button class="btn sm" id="tapApply" disabled hidden>Use this tempo</button>
+            <button class="btn sm" id="tapStart" disabled hidden>Start here</button>
+            <button class="btn sm" id="tapClear" disabled hidden>Clear</button>
+          </span>
+          <span class="grow"></span>
+          <label class="inline" title="When on, editing one section never moves the others"><input type="checkbox" id="anchorChk"> Keep others in place</label>
+          <label class="inline"><input type="checkbox" id="autoLabel"> Letters follow order</label>
+        </div>
+        <div class="tools" id="showTools">
+          <select id="addSel" aria-label="Section to add"></select>
+          <button class="btn" id="addEnt">Add</button>
+          <button class="btn" id="addIntro">Intro click</button>
+          <button class="btn" id="addClick">Click bars at end</button>
+          <span class="tsep"></span>
+          <span class="inline" title="Straight through: the original recording plays on underneath while the click follows the show, so extra vamp or safety passes don't stretch the song. Exports always use the edited track."><span class="lbl">Track</span>
+            <span class="seg" role="group" aria-label="Track playback"><button type="button" data-straight="0" aria-pressed="true">Edited</button><button type="button" data-straight="1" aria-pressed="false">Straight through</button></span></span>
+          <span class="grow"></span>
+          <button class="btn" id="resetArr" title="Rebuild the running order from the original's sections">Reset</button>
+        </div>
+        <div class="lanehead">
+          <span class="lbl" id="laneLbl">Show</span>
+          <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · click a name strip to select · pinch to zoom</span></span>
+          <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="0" max="100" step="0.1" value="0" style="width:130px" aria-label="Zoom"></label>
+        </div>
+        <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
+      </div>
+      <div class="card">
+        <div class="list" id="mapBody" hidden></div>
+        <div class="list" id="ents"></div>
+      </div>
+    </section>
+  </main>
+</div>
 
-  <section class="pane" id="paneMap" role="tabpanel" aria-labelledby="tabMap" hidden>
-    <div class="card">
-      <div class="tools">
-        <button class="btn" id="detectAll">Auto-detect tempo</button>
-        <button class="btn primary" id="lineUpAll" title="Snap every section's beats onto the hits in the audio">Line up all</button>
-        <label class="inline" title="Also fine-tune each section's tempo while lining up"><input type="checkbox" id="fitTempo" checked> fit tempo</label>
-        <button class="btn" id="splitBtn" title="Split the section under the playhead (S)">Split at playhead</button>
-        <button class="btn" id="addSec">Add section</button>
-        <span class="taps">
-          <button class="btn tapbtn" id="tapBtn" title="Tap along while it plays (T)">Tap</button>
-          <span class="tapinfo" id="tapInfo">No taps</span>
-          <button class="btn sm" id="tapApply" disabled hidden>Use this tempo</button>
-          <button class="btn sm" id="tapStart" disabled hidden>Start here</button>
-          <button class="btn sm" id="tapClear" disabled hidden>Clear</button>
-        </span>
-        <span class="grow"></span>
-        <label class="inline" title="When on, editing one section never moves the others"><input type="checkbox" id="anchorChk"> Keep other sections in place</label>
-        <label class="inline"><input type="checkbox" id="autoLabel"> Letters follow order</label>
-      </div>
-      <p class="hint">How the track was recorded. Pick a section to edit it, drag ⠿ to reorder, or drag a section's start line on the waveform.</p>
-      <div class="list" id="mapBody"></div>
-    </div>
-    <aside class="card insp" id="mapInsp" aria-label="Section details"></aside>
-  </section>
+<div class="pop" id="clickPop" hidden role="dialog" aria-label="Click settings">
+  <h2>Click</h2>
+  <div class="mix">
+    <label><span class="lbl">Count-in</span><span class="ci" data-ci-host></span></label>
+    <label><span class="lbl">Sound</span>
+      <select id="setSound"><option value="beep">Beep</option><option value="wood">Woodblock</option><option value="low">Low click</option></select></label>
+    <label><span class="lbl">Subdivision</span>
+      <select id="setSub"><option value="1">Off</option><option value="2">8ths</option><option value="3">Triplets</option><option value="4">16ths</option></select></label>
+    <label class="inline"><input type="checkbox" id="setAccent"> Accent beat 1</label>
+    <label><span class="lbl">Click level</span><input type="range" id="setClickVol" min="0" max="1" step="0.01"></label>
+    <label><span class="lbl">Track level</span><input type="range" id="setTrackVol" min="0" max="1" step="0.01"></label>
+    <label class="inline" title="Only while the track is up. With the track level at zero the click stays in both ears."><input type="checkbox" id="setSplit"> Click left / track right</label>
+  </div>
+</div>
 
-  <section class="pane" id="paneShow" role="tabpanel" aria-labelledby="tabShow">
-    <div class="card">
-      <div class="tools">
-        <span class="ci" data-ci-host title="Count-in before the song"><span class="cil">Count-in</span></span>
-        <span class="tsep"></span>
-        <select id="addSel" aria-label="Section to add"></select>
-        <button class="btn" id="addEnt">Add</button>
-        <button class="btn" id="addIntro">Intro click</button>
-        <button class="btn" id="addClick">Click bars at end</button>
-        <span class="grow"></span>
-        <button class="btn" id="resetArr" title="Rebuild the running order from the tempo map">Reset</button>
-      </div>
-      <p class="hint">What you'll actually play, top to bottom. Pick a row to set repeats, vamps and cuts; drag ⠿ to reorder.</p>
-      <div class="list" id="ents"></div>
+<div class="pop" id="exportPop" hidden role="dialog" aria-label="Export">
+  <h2>QLab</h2>
+  <p class="sub">Everything QLab needs: audio for each cue, vamps and safeties set up, and a script that builds the cues in QLab 5. Whoever runs the show just presses GO. <span id="qlRoute"></span></p>
+  <div class="mix">
+    <label><span class="lbl">Song name</span><input type="text" id="qlName" placeholder="Song name"></label>
+    <label><span class="lbl">First cue number</span><input type="text" id="qlNum" value="1" style="width:6em" class="num"></label>
+    <label><span class="lbl">The track</span><select id="qlTrack">
+      <option value="none">Reference only: click only</option>
+      <option value="foh">Plays in the show: to FOH</option></select></label>
+  </div>
+  <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
+  <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
+  <ol class="steps-mini">
+    <li>Unzip into your show folder and keep the files together.</li>
+    <li>Open QLab 5 and your workspace, and click the cue these should go after.</li>
+    <li>Open <b>Import into QLab.applescript</b> and press Run. Allow it to control QLab the first time.</li>
+    <li id="qlPatch">Patch output 1 to the in-ear mix.</li>
+  </ol>
+  <div class="sect">
+    <h2>Other files</h2>
+    <p class="sub">The show as edited, in one .zip. Open-ended vamps use their export count.</p>
+    <div class="checks">
+      <label><input type="checkbox" id="exClick" checked> <span>Click only <small>· mono 24-bit WAV</small></span></label>
+      <label><input type="checkbox" id="exSplit" checked> <span>Click L / track R <small>· stereo WAV for IEM rigs</small></span></label>
+      <label><input type="checkbox" id="exTrack" checked> <span>Edited track <small>· stereo WAV, cuts and vamps applied</small></span></label>
+      <label><input type="checkbox" id="exMidi" checked> <span>MIDI click + tempo map <small>· markers for QLab, Ableton, Logic</small></span></label>
     </div>
-    <aside class="card insp" id="showInsp" aria-label="Running order details"></aside>
-  </section>
-
-  <section class="out" id="paneOut" role="tabpanel" aria-labelledby="tabOut" hidden>
-    <div class="card qlab">
-      <h2>QLab</h2>
-      <p class="sub">One zip with everything QLab needs: the audio for each cue, the vamps already set to loop, and a script that builds the cues in QLab 5. Whoever runs the show just presses GO. <span id="qlRoute"></span></p>
-      <div class="mix">
-        <label><span class="lbl">Song name</span><input type="text" id="qlName" placeholder="Song name"></label>
-        <label><span class="lbl">First cue number</span><input type="text" id="qlNum" value="1" style="width:6em" class="num"></label>
-        <label><span class="lbl">The track</span><select id="qlTrack">
-          <option value="none">Reference only: click only</option>
-          <option value="foh">Plays in the show: to FOH</option></select></label>
-      </div>
-      <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
-      <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
-      <ol class="steps-mini">
-        <li>Unzip into your show folder and keep the files together.</li>
-        <li>Open QLab 5 and your workspace, and click the cue these should go after.</li>
-        <li>Open <b>Import into QLab.applescript</b> and press Run. Allow it to control QLab the first time.</li>
-        <li id="qlPatch">Patch output 1 to the in-ear mix.</li>
-      </ol>
-    </div>
-    <div class="card">
-      <h2>Click &amp; mix</h2>
-      <div class="mix">
-        <label><span class="lbl">Count-in</span>
-          <span class="ci" data-ci-host></span></label>
-        <label><span class="lbl">Sound</span>
-          <select id="setSound"><option value="beep">Beep</option><option value="wood">Woodblock</option><option value="low">Low click</option></select></label>
-        <label><span class="lbl">Subdivision</span>
-          <select id="setSub"><option value="1">Off</option><option value="2">8ths</option><option value="3">Triplets</option><option value="4">16ths</option></select></label>
-        <label class="inline"><input type="checkbox" id="setAccent"> Accent beat 1</label>
-        <label><span class="lbl">Click level</span><input type="range" id="setClickVol" min="0" max="1" step="0.01"></label>
-        <label><span class="lbl">Track level</span><input type="range" id="setTrackVol" min="0" max="1" step="0.01"></label>
-        <label class="inline" title="Only while the track is up. With the track level at zero the click stays in both ears."><input type="checkbox" id="setSplit"> Click left / track right</label>
-      </div>
-    </div>
-    <div class="card">
-      <h2>Export</h2>
-      <p class="sub">Renders the show running order. Open-ended vamps use their “Plays” count. Files come in one .zip.</p>
-      <div class="checks">
-        <label><input type="checkbox" id="exClick" checked> <span>Click only <small>· mono 24-bit WAV</small></span></label>
-        <label><input type="checkbox" id="exSplit" checked> <span>Click L / track R <small>· stereo WAV for IEM rigs</small></span></label>
-        <label><input type="checkbox" id="exTrack" checked> <span>Edited track <small>· stereo WAV, cuts and vamps applied</small></span></label>
-        <label><input type="checkbox" id="exMidi" checked> <span>MIDI click + tempo map <small>· markers for QLab, Ableton, Logic</small></span></label>
-      </div>
-      <div class="bar">
-        <button class="btn primary" id="exportBtn">Export .zip</button>
-        <button class="btn" id="saveProj">Save project</button>
-        <label class="btn file">Open project…<input type="file" id="projIn" accept=".json,application/json"></label>
-      </div>
-      <p class="note" id="exNote">Your work saves automatically in this browser, track included. Use Save project to move it to another computer.</p>
-    </div>
-  </section>
+    <div class="bar"><button class="btn" id="exportBtn">Export .zip</button></div>
+  </div>
+  <div class="sect">
+    <div class="bar"><button class="btn" id="saveProj">Save project</button><label class="btn file">Open project…<input type="file" id="projIn" accept=".json,application/json"></label></div>
+    <p class="note" id="exNote">Your work saves automatically in this browser, track included. Use Save project to move it to another computer.</p>
+  </div>
 </div>
 <div class="sigpop" id="sigPop" role="listbox" aria-label="Time signatures" hidden></div>
 <div class="toast" id="toast" hidden></div>
@@ -521,7 +531,7 @@ let selSec = null;
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1", qlTrack:"none"};
+const DEFAULT_SET = {straight:false, countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1", qlTrack:"none"};
 function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
 function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
@@ -530,8 +540,9 @@ let locked = false; try { locked = localStorage.getItem("pitclick:locked") === "
 function applyLock(){
   document.body.classList.toggle("locked", locked);
   const b = $("#lockBtn"); b.setAttribute("aria-pressed", locked); b.textContent = locked ? "Unlock" : "Lock";
-  const sel = "#paneMap input, #paneMap button, #paneMap select, #paneShow input, #paneShow button, #paneShow select, [data-ci], [data-ci-other], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
+  const sel = "#mapTools input, #mapTools button, #mapTools select, #showTools input, #showTools button, #showTools select, #mapInsp input, #mapInsp button, #mapInsp select, #showInsp input, #showInsp button, #showInsp select, [data-ci], [data-ci-other], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
   document.querySelectorAll(sel).forEach(el => { if (locked) el.disabled = true; else if (el.dataset.lk !== "1") el.disabled = false; });
+  document.querySelectorAll("[data-straight]").forEach(b => b.disabled = false);
   document.querySelectorAll("label.file").forEach(l => l.classList.toggle("disabled", locked));
   $("#tapBtn").disabled = false;
   if (!locked){ renderTaps(); $("#undoBtn").disabled = !hist.length; }
@@ -605,7 +616,7 @@ function computeSrc(){
 
 /* ---------------- timelines ---------------- */
 // chunk: {kind, t, dur, src|null, bpm, beats, bar, bars, click, clickFrom, label, name, ent, pass, passes, open, sid}
-function build(v){
+function build(v, forExport){
   computeSrc();
   const ch = []; let t = 0;
   const push = c => { c.t = t; if (c.dur > 1e-6){ ch.push(c); t += c.dur; } };
@@ -675,6 +686,17 @@ function build(v){
   if (v !== "map" && pre > 0){
     const A = ch.find(c => c.kind === "sec" && c.ent === S.arr.indexOf(eA) && c.pass === 0);
     if (A) for (const c of ch){ if (c === A) break; if (c.kind === "lead" || c.kind === "click"){ const s0 = secs[0].start - (A.t - c.t); if (s0 + c.dur > 0) c.src = s0; } }
+  }
+  // "Track straight through": the original recording runs on underneath while the click follows the
+  // running order, so extra vamp / safety passes don't stretch the song. Exports always use the edit.
+  if (v !== "map" && !forExport && S.set.straight && track){
+    if (ch.length && ch[ch.length - 1].kind === "tail"){ t -= ch[ch.length - 1].dur; ch.pop(); }
+    let cur = null;
+    for (const c of ch){
+      if (cur == null){ if (c.src != null) cur = c.src + c.dur; continue; }
+      c.src = cur; cur += c.dur;
+    }
+    if (cur != null && cur < track.dur - 0.01) push({kind:"tail", dur:track.dur - cur, src:cur, click:false, name:"Tail"});
   }
   for (let i = 0; i < ch.length; i++){
     const a = ch[i-1], c = ch[i];
@@ -806,6 +828,19 @@ function play(){
   // each playback gets its own output gates; stop() disconnects them so nothing can keep sounding
   const tOut = c.createGain(), cOut = c.createGain(); tOut.connect(trackBus); cOut.connect(clickBus);
   P = {live, idx, within:Math.max(0, within), when:c.currentTime + 0.08, nodes:new Set(), sched:[], go:false, passNo:0, endAt:null, tOut, cOut, released:live[idx], waiting:null};
+  if (view === "show" && S.set.straight){
+    P.straight = true;
+    let k = idx, lead = 0; while (P.live[k] && P.live[k].src == null){ lead += P.live[k].dur - (k === idx ? P.within : 0); k++; }
+    const L0 = P.live[k], tb = trackBuf();
+    if (L0 && tb){
+      const off = Math.max(0, L0.src + (k === idx ? P.within : 0)), at = P.when + lead;
+      if (off < track.dur){
+        const n = c.createBufferSource(); n.buffer = tb; const g = c.createGain(); n.connect(g); g.connect(P.tOut);
+        g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(1, at + 0.004);
+        n.start(at, off); P.nodes.add(n); n.onended = () => P && P.nodes.delete(n);
+      }
+    }
+  }
   pump(); pumpTimer = setInterval(pump, 25);
   $("#playBtn").textContent = "❚❚"; $("#playBtn").setAttribute("aria-label","Pause");
   loop();
@@ -835,7 +870,7 @@ function schedule(ch, when, within){
   const c = actx, made = [];
   const track_ = n => { const set = P.nodes; set.add(n); made.push(n); n.onended = () => set.delete(n); };
   const tb = trackBuf();
-  if (ch.src != null && tb){
+  if (ch.src != null && tb && !P.straight){
     let sp = ch.src + within, w = when, d = ch.dur - within;
     if (sp < 0){ w -= sp; d += sp; sp = 0; }
     if (d > 0.002 && sp < track.dur){
@@ -967,7 +1002,7 @@ function drawLane(){
   if (!S) return;
   const r = tl(); const lane = $("#lane"), cv = $("#cv");
   const vw = Math.max(200, lane.clientWidth); const total = Math.max(r.total, 1);
-  const W = Math.round(vw * zoom), H = 178;
+  const W = Math.round(vw * zoom), H = 220;
   pps = W / total;
   // only the visible slice is drawn, so zoom can go right down to sample level
   $("#laneInner").style.width = W + "px";
@@ -977,19 +1012,20 @@ function drawLane(){
   cv.style.left = sl + "px";
   const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, -sl * dpr, 0); g.clearRect(sl, 0, vw, H);
   const vis = c => (c.t + c.dur) * pps >= sl - 2 && c.t * pps <= X1 + 2;
-  const C = {ink:css("--ink"), muted:css("--muted"), line:css("--line"), wave:css("--wave"), band:css("--band"), amber:css("--amber"), amberS:css("--amber-soft"), vamp:css("--vamp"), vampS:css("--vamp-soft"), panel:css("--panel"), grid:css("--grid")};
+  const C = {ink:css("--ink"), muted:css("--muted"), line:css("--line"), wave:css("--wave"), band:css("--band"), amber:css("--amber"), amberS:css("--amber-soft"), vamp:css("--vamp"), vampS:css("--vamp-soft"), panel:css("--panel"), grid:css("--grid"), region:css("--region"), regionHi:css("--region-hi"), safety:css("--safety"), well:css("--well")};
   const top = 40, bot = H - 6, mid = (top + bot) / 2, half = (bot - top) / 2;
   // bands
+  const selIdx = view === "show" ? S.arr.findIndex(e => e.id === selEnt) : -1;
+  const isSel = c => view === "map" ? !!(c.sid && c.sid === selSec) : (c.ent != null && c.ent === selIdx && c.kind !== "gap");
+  const regionCol = c => c.kind === "click" ? C.amber : c.open ? C.vamp : c.safety ? C.safety : (c.passes > 1 ? C.vamp : C.region);
   let alt = 0;
   r.forEach(c => {
     const x0 = c.t * pps, x1 = (c.t + c.dur) * pps;
-    if (c.kind === "sec"){ if (c.pass === 0 || c.pass == null) alt ^= 1; g.fillStyle = (c.open || c.passes > 1) ? C.vampS : (alt ? C.band : "transparent"); }
-    else if (c.kind === "click") g.fillStyle = C.amberS;
-    else if (c.kind === "lead") g.fillStyle = C.band;
-    else g.fillStyle = "transparent";
     if (!vis(c)) return;
-    if (g.fillStyle !== "transparent" && g.fillStyle !== "rgba(0, 0, 0, 0)") g.fillRect(x0, 0, x1 - x0, H);
-    if (view === "map" && c.sid && c.sid === selSec){ g.fillStyle = C.amberS; g.fillRect(x0, 0, x1 - x0, H); }
+    if (c.kind === "sec" || c.kind === "click"){
+      if (c.pass === 0 || c.pass == null) alt ^= 1;
+      g.globalAlpha = isSel(c) ? 0.24 : (alt ? 0.12 : 0.08); g.fillStyle = regionCol(c); g.fillRect(x0, 24, x1 - x0, H - 24); g.globalAlpha = 1;
+    } else if (c.kind === "lead"){ g.fillStyle = C.band; g.fillRect(x0, 24, x1 - x0, H - 24); }
   });
   // waveform
   if (track && track.peaks){
@@ -1040,23 +1076,26 @@ function drawLane(){
     if (!(c.kind === "sec" || c.kind === "click")) return;
     if (c.pass > 0 && !(c.passes > 1)) return;
     if (!vis(c)) return;
-    const x0 = Math.round(c.t * pps) + 0.5, isV = c.open || c.passes > 1;
-    g.fillStyle = isV ? C.vamp : C.ink; g.fillRect(x0 - 1, 0, 2, H);
+    const x0 = Math.round(c.t * pps) + 0.5, x1 = (c.t + c.dur) * pps, sel = isSel(c), col = regionCol(c);
+    // name strip across the top of the region
+    g.fillStyle = col; g.globalAlpha = sel ? 1 : (c.pass > 0 ? 0.55 : 0.8); g.fillRect(x0 + 1, 1, Math.max(1, x1 - x0 - 2), 22); g.globalAlpha = 1;
+    if (sel){ g.strokeStyle = C.grid; g.lineWidth = 1.5; g.strokeRect(x0 + 1.5, 1.5, Math.max(1, x1 - x0 - 3), 21); }
+    g.fillStyle = col; g.fillRect(x0 - 1, 0, 2, H);
     if (c.goStart){ g.fillStyle = C.amber; g.fillRect(x0 - 4, 0, 3, H); g.font = "700 10px " + css("--f-num"); g.fillText("GO", x0 - 22, H - 12); }
-    const x = Math.max(x0, sl), w = (c.t + c.dur) * pps - x;
+    const x = Math.max(x0, sl), w = x1 - x;
+    const dark = c.kind === "click" ? C.well : "#FFFFFF";
     if (c.pass > 0){
-      if (w > 30){ g.font = "600 11px " + css("--f-num"); g.fillStyle = C.vamp; g.fillText("×" + (c.pass + 1), x + 5, 12); }
+      if (w > 30){ g.font = "600 11px " + css("--f-num"); g.fillStyle = dark; g.fillText("×" + (c.pass + 1), x + 6, 12.5); }
       return;
     }
-    g.font = "800 14px " + css("--f-mark");
-    const lw = Math.max(20, g.measureText(c.label).width + 10);
+    g.font = "800 13px " + css("--f-mark");
+    const lw = Math.max(18, g.measureText(c.label).width + 9);
     if (w > 14){
-      g.fillStyle = C.panel; g.fillRect(x + 3, 2, lw, 20);
-      g.strokeStyle = isV ? C.vamp : C.ink; g.lineWidth = 2; if (c.kind === "click") g.setLineDash([3, 2]);
-      g.strokeRect(x + 4, 3, lw - 2, 18); g.setLineDash([]);
-      g.fillStyle = isV ? C.vamp : C.ink; g.textAlign = "center"; g.fillText(c.label, x + 3 + lw/2, 12.5); g.textAlign = "left";
+      g.strokeStyle = dark; g.lineWidth = 1.5; if (c.kind === "click") g.setLineDash([3, 2]);
+      g.strokeRect(x + 4, 4, lw - 2, 16); g.setLineDash([]);
+      g.fillStyle = dark; g.textAlign = "center"; g.fillText(c.label, x + 3 + lw/2, 12.5); g.textAlign = "left";
       if (w > lw + 40){
-        g.font = "500 12px " + css("--f-ui"); g.fillStyle = C.ink;
+        g.font = "500 12px " + css("--f-ui"); g.fillStyle = dark; g.strokeStyle = dark;
         g.save(); g.beginPath(); g.rect(x + lw + 8, 0, Math.max(0, w - lw - 12), 24); g.clip();
         let cx = x + lw + 10; const nm = (c.name || "") + "  " + sigTxt(c) + "  ";
         g.fillText(nm, cx, 12.5); cx += g.measureText(nm).width;
@@ -1087,6 +1126,15 @@ function startDrag(e){
     secDrag = {sid, id:e.pointerId, old: startsById(), base: snapshot()}; selSec = sid;
     $("#laneInner").setPointerCapture(e.pointerId); $("#laneInner").classList.add("dragging");
     return;
+  }
+  const yIn = e.clientY - $("#laneInner").getBoundingClientRect().top;
+  if (yIn < 24){
+    const t = laneT(e), c = tl().find(c => (c.kind === "sec" || c.kind === "click") && t >= c.t && t < c.t + c.dur);
+    if (c){
+      if (view === "map" && c.sid){ selSec = c.sid; }
+      else if (view === "show" && c.ent != null && S.arr[c.ent]){ selEnt = S.arr[c.ent].id; }
+      renderAll(); return;
+    }
   }
   drag = {was:!!P, id:e.pointerId, x0:e.clientX};
   stopIfPlaying();
@@ -1129,12 +1177,30 @@ $("#laneInner").addEventListener("pointercancel", endDrag);
 
 /* ---------------- panels ---------------- */
 function renderAll(){
-  invalidate(); renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout();
+  invalidate();
+  // in the Show view the inspector shows the selected entry AND the section it plays, so nothing needs another page
+  if (S && view === "show"){ const e = S.arr.find(x => x.id === selEnt) || S.arr[0]; if (e && e.kind === "sec") selSec = e.sec; }
+  renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout(); syncInspector();
   // remember which controls are disabled for their own reasons, so unlocking doesn't enable them
   // rows are rebuilt each render: remember which of their controls are disabled for their own reasons
   document.querySelectorAll("#mapInsp [disabled], #showInsp [disabled]").forEach(el => el.dataset.lk = "1");
   applyLock();
 }
+function syncInspector(){
+  const e = S && S.arr.find(x => x.id === selEnt);
+  const showSec = view === "map" || (e && e.kind === "sec");
+  $("#showInsp").hidden = view !== "show";
+  $("#mapInspWrap").hidden = !showSec;
+  $("#mapInspSub").hidden = view !== "show";
+  $("#inspHint").textContent = view === "map" ? "Section in the original" : e ? (e.kind === "sec" ? "Show entry and its section" : "Click-only bars") : "Click a row or the timeline";
+  let closed = []; try { closed = JSON.parse(localStorage.getItem("pitclick:closed") || "[]"); } catch(err){}
+  document.querySelectorAll(".inspector .group").forEach(g => { const h = g.querySelector("h3"); if (h) g.classList.toggle("closed", closed.includes(h.textContent.trim())); });
+}
+document.querySelector(".inspector").addEventListener("click", ev => {
+  const h = ev.target.closest(".group > h3"); if (!h) return;
+  const g = h.parentElement; g.classList.toggle("closed");
+  try { const k = h.textContent.trim(); let c = JSON.parse(localStorage.getItem("pitclick:closed") || "[]"); c = c.filter(x => x !== k); if (g.classList.contains("closed")) c.push(k); localStorage.setItem("pitclick:closed", JSON.stringify(c)); } catch(err){}
+});
 function focusKey(){ const a = document.activeElement; if (!a || !a.dataset || !a.dataset.f) return null; const row = a.closest("[data-sid],[data-i]"); return row ? {row: row.dataset.sid ? `[data-sid="${row.dataset.sid}"]` : `[data-i="${row.dataset.i}"]`, f:a.dataset.f} : null; }
 function refocus(k){ if (!k) return; const el = document.querySelector(`${k.row} [data-f="${k.f}"]`); if (el) el.focus(); }
 
@@ -1199,7 +1265,7 @@ function mapClick(e){
   const row = e.target.closest("[data-sid]"); if (!row) return;
   const id = row.dataset.sid; const a = e.target.closest("[data-a]");
   if (a && a.dataset.a === "grip") return;
-  if (!a){ if (row.closest("#mapBody") && selSec !== id){ selSec = id; renderMap(); if (view === "map") drawLane(); } return; }
+  if (!a){ if (row.closest("#mapBody") && selSec !== id){ selSec = id; renderAll(); } return; }
   selSec = id;
   const act = a.dataset.a; const s = secById(id); const i = S.sections.indexOf(s);
   if (act === "off"){
@@ -1482,7 +1548,7 @@ function renderShowInsp(span){
   }
   const s = secById(e.sec);
   el.innerHTML = `<div data-i="${i}">
-    <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><button class="btn sm" data-a="gomap" title="Edit tempo and meter in step 1">Tempo map →</button></div>
+    <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">Show entry</span></div>
     <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${tempoHTML(s)}</p>
       ${(() => { const mode = e.open ? "vamp" : e.safety ? "safety" : "fixed";
         const lab = mode === "safety" ? "Plays up to" : mode === "vamp" ? "Times in export" : "Times";
@@ -1504,8 +1570,7 @@ function showClick(ev){
   const row = ev.target.closest("[data-i]"); if (!row) return;
   const i = +row.dataset.i, a = ev.target.closest("[data-a]");
   if (a && a.dataset.a === "grip") return;
-  if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderArr(); } return; }
-  if (a.dataset.a === "gomap"){ selSec = S.arr[i].sec; setTab("map"); return; }
+  if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderAll(); } return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
   if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => { en.open = m === "vamp"; en.safety = m === "safety"; if (m === "safety" && en.repeat < 2) en.repeat = 2; }); return; }
   mut(() => {
@@ -1559,6 +1624,7 @@ function defaultArr(){ return S.sections.map(s => ({id:uid(), kind:"sec", sec:s.
 function renderSettings(){
   const s = S.set;
   $("#autoLabel").checked = s.autoLabel !== false;
+  document.querySelectorAll("[data-straight]").forEach(b => b.setAttribute("aria-pressed", (b.dataset.straight === "1") === !!s.straight));
   $("#anchorChk").checked = s.anchor !== false;
   $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
   $("#qlNum").value = s.qlNum || "1";
@@ -1569,7 +1635,7 @@ function renderSettings(){
   document.querySelectorAll("[data-ci-host]").forEach(h => {
     const lbl = h.querySelector(".cil"); const n = s.countIn | 0;
     h.innerHTML = (lbl ? lbl.outerHTML : "") + `<span class="seg" role="group" aria-label="Count-in">${[[0, "None"], [1, "1 bar"], [2, "2 bars"]].map(([v, t]) => `<button type="button" data-ci="${v}" aria-pressed="${n === v}">${t}</button>`).join("")}</span>` +
-      `<input type="number" data-ci-other min="0" max="16" step="1" value="${n > 2 ? n : ""}" placeholder="other" aria-label="Other count-in, in bars" title="Any other number of bars">`;
+      (h.hasAttribute("data-ci-compact") ? (n > 2 ? `<span class="badge dim">${n} bars</span>` : "") : `<input type="number" data-ci-other min="0" max="16" step="1" value="${n > 2 ? n : ""}" placeholder="other" aria-label="Other count-in, in bars" title="Any other number of bars">`);
   });
   $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
@@ -1583,6 +1649,12 @@ document.addEventListener("change", e => {
   if (!e.target.matches("[data-ci-other]")) return;
   const v = clamp(Math.round(+e.target.value || 0), 0, 16);
   mut(() => S.set.countIn = v);
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-straight]"); if (!b) return;
+  const v = b.dataset.straight === "1"; if (!!S.set.straight === v) return;
+  stopIfPlaying(); S.set.straight = v; saveLocal(); renderAll();
+  toast(v ? "Track plays straight through: the original recording runs under the click." : "Track edited to follow the show.");
 });
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
 $("#anchorChk").onchange = e => { mut(() => S.set.anchor = e.target.checked, {free:true}); toast(e.target.checked ? "Editing a section won't move the others." : "Sections are chained: making one longer pushes the rest later."); };
@@ -1603,18 +1675,22 @@ function setView(v){
   if (srcT == null) playhead = 0;
   else if (v === "map") playhead = clamp(srcT, 0, tl().total);
   else { const r = tl(); const c = r.find(c => c.src != null && srcT >= c.src && srcT < c.src + c.dur); playhead = c ? c.t + (srcT - c.src) : 0; }
-  $("#laneLbl").textContent = v === "map" ? "Original track" : "Show running order";
+  $("#laneLbl").textContent = v === "map" ? "Original recording" : "Show";
   drawLane(); updateReadout(); follow(); saveLocal();
 }
 let tab = "show";
+function syncViewUI(){
+  document.querySelectorAll(".vbtn").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === tab));
+  $("#viewDesc").textContent = tab === "map" ? "The recording as it is: line up bar 1, tempos, time signatures, rits and holds." : "The show as you'll play it: order, repeats, vamps, safeties, cuts and stops.";
+  $("#mapTools").hidden = tab !== "map"; $("#showTools").hidden = tab !== "show";
+  $("#mapBody").hidden = tab !== "map"; $("#ents").hidden = tab !== "show";
+}
 function setTab(t){
-  tab = t;
-  document.querySelectorAll(".step").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === t));
-  $("#paneMap").hidden = t !== "map"; $("#paneShow").hidden = t !== "show"; $("#paneOut").hidden = t !== "out";
-  setView(t === "map" ? "map" : "show");
+  tab = t === "map" ? "map" : "show";
+  setView(tab); syncViewUI();
   renderAll(); saveLocal();
 }
-document.querySelectorAll(".step").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+document.querySelectorAll(".vbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
 /* transport */
 $("#playBtn").onclick = () => P ? stop() : play();
 $("#stopBtn").onclick = () => { stop(); updateReadout(); };
@@ -1749,6 +1825,22 @@ document.addEventListener("keydown", e => {
 }, true);
 window.addEventListener("resize", closeSig);
 document.addEventListener("scroll", () => { if (sigFor) openSig(sigFor); }, true);
+
+/* control-bar menus */
+let popOpen = null;
+function openPop(id, btn){
+  closePop();
+  const pop = $("#" + id); pop.hidden = false; btn.setAttribute("aria-expanded", "true"); popOpen = {pop, btn};
+  const r = btn.getBoundingClientRect(), w = pop.offsetWidth;
+  pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + "px";
+  pop.style.top = (r.bottom + 6) + "px";
+  if (id === "exportPop") renderQlabPreview();
+}
+function closePop(){ if (!popOpen) return; popOpen.pop.hidden = true; popOpen.btn.setAttribute("aria-expanded", "false"); popOpen = null; }
+document.querySelectorAll("[data-pop]").forEach(b => b.addEventListener("click", e => { e.stopPropagation(); if (popOpen && popOpen.btn === b) closePop(); else openPop(b.dataset.pop, b); }));
+document.addEventListener("mousedown", e => { if (popOpen && !e.target.closest(".pop") && !e.target.closest("[data-pop]") && !e.target.closest("#sigPop")) closePop(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && popOpen && !sigFor) closePop(); });
+window.addEventListener("resize", () => { if (popOpen) openPop(popOpen.pop.id, popOpen.btn); });
 
 /* ---------------- tempo detection ---------------- */
 function makeFFT(n){
@@ -1970,11 +2062,9 @@ async function loadFile(file){
   }
 }
 function setViewSilent(v){
-  view = v; invalidate();
-  if (v === "map" && tab !== "map") tab = "map"; else if (v === "show" && tab === "map") tab = "show";
-  document.querySelectorAll(".step").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === tab));
-  $("#paneMap").hidden = tab !== "map"; $("#paneShow").hidden = tab !== "show"; $("#paneOut").hidden = tab !== "out";
-  $("#laneLbl").textContent = v === "map" ? "Original track" : "Show running order";
+  view = v; invalidate(); tab = v === "map" ? "map" : "show";
+  syncViewUI();
+  $("#laneLbl").textContent = v === "map" ? "Original recording" : "Show";
 }
 $("#fileIn").addEventListener("change", e => { loadFile(e.target.files[0]); e.target.value = ""; });
 let dragN = 0;
@@ -2047,7 +2137,7 @@ function downloads(){
   })();
   return dlP;
 }
-function renderShow(){ const r = build("show"); return {r, ...renderChunks(r)}; }
+function renderShow(){ const r = build("show", true); return {r, ...renderChunks(r)}; }
 function renderChunks(r){
   const sr = track.sr; const n = Math.ceil(r.total * sr) + 1;
   const L = new Float32Array(n), Rr = new Float32Array(n), K = new Float32Array(n);
@@ -2190,7 +2280,7 @@ const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? trac
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
 function qlabPlan(){
-  const r = build("show").filter(c => !((c.open || c.safety) && c.pass > 0));
+  const r = build("show", true).filter(c => !((c.open || c.safety) && c.pass > 0));
   const segs = []; let cur = [];
   for (const c of r){ if (c.goStart && cur.length){ segs.push(cur); cur = []; } cur.push(c); }
   if (cur.length) segs.push(cur);
@@ -2451,7 +2541,7 @@ function cueSheet(cues, song){
   return out.join("\n");
 }
 function renderQlabPreview(){
-  const el = $("#qlPreview"); if (!el || tab !== "out" || !S) return;
+  const el = $("#qlPreview"); if (!el || $("#exportPop").hidden || !S) return;
   if (!track || !S.arr.length){ el.innerHTML = ""; return; }
   let cues; try { cues = qlabPlan(); } catch(e){ el.innerHTML = ""; return; }
   let go = 0;
@@ -2499,7 +2589,7 @@ async function boot(){
     const pr = ses.project || {};
     if (Array.isArray(pr.sections)){ S.offset = +pr.offset || 0; S.sections = pr.sections; S.arr = pr.arr || []; S.set = {...DEFAULT_SET, ...pr.set}; normAll(); }
     selSec = ses.selSec || null; selEnt = ses.selEnt || null;
-    tab = ["map","show","out"].includes(ses.tab) ? ses.tab : (ses.view === "map" ? "map" : "show");
+    tab = ses.tab === "map" || (ses.tab !== "show" && ses.view === "map") ? "map" : "show";
     setViewSilent(tab === "map" ? "map" : "show");
     zoom = clamp(+ses.zoom || 1, 1, 1e6);
     renderAll(); playhead = clamp(+ses.playhead || 0, 0, tl().total); updateReadout();
