@@ -226,7 +226,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v33</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v34</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -338,7 +338,8 @@ input[type=checkbox]{accent-color:var(--amber)}
     <label><span class="lbl">First cue number</span><input type="text" id="qlNum" value="1" style="width:6em" class="num"></label>
     <label><span class="lbl">The track</span><select id="qlTrack">
       <option value="none">Reference only: click only</option>
-      <option value="foh">Plays in the show: to FOH</option></select></label>
+      <option value="foh">Plays in the show: to FOH</option>
+      <option value="mix">Track + click together: click in the centre</option></select></label>
   </div>
   <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
   <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
@@ -1704,9 +1705,9 @@ function renderSettings(){
   $("#anchorChk").checked = s.anchor !== false;
   $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
   $("#qlNum").value = s.qlNum || "1";
-  $("#qlTrack").value = s.qlTrack === "foh" ? "foh" : "none";
-  $("#qlRoute").textContent = qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, in both ears (outputs 1 and 2). The track stays out of QLab.";
-  $("#qlPatch").textContent = qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch outputs 1 and 2 (left and right) to the in-ear mix.";
+  $("#qlTrack").value = ["foh", "mix"].includes(s.qlTrack) ? s.qlTrack : "none";
+  $("#qlRoute").textContent = qlMix() ? "Track in stereo with the click down the centre, on outputs 1 and 2." : qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, in both ears (outputs 1 and 2). The track stays out of QLab.";
+  $("#qlPatch").textContent = qlMix() ? "Patch outputs 1 and 2 (left and right) to the mix that needs track and click." : qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch outputs 1 and 2 (left and right) to the in-ear mix.";
   renderQlabPreview();
   document.querySelectorAll("[data-ci-host]").forEach(h => {
     const lbl = h.querySelector(".cil"); const n = s.countIn | 0;
@@ -2326,14 +2327,7 @@ $("#exportBtn").onclick = async () => {
     const files = [];
     if (want.click) files.push({name:`${base} - click.wav`, data:wav24([K], sr)});
     if (want.split){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:`${base} - click L track R.wav`, data:wav24([K, M], sr)}); }
-    if (want.mix){
-      // track in stereo as it is, click equally in both sides (-3 dB each, so it sits in the centre at the same loudness);
-      // the whole mix is turned down only if it would clip
-      const g = Math.SQRT1_2, ML = new Float32Array(L.length), MR = new Float32Array(L.length); let pk = 0;
-      for (let i = 0; i < ML.length; i++){ ML[i] = L[i] + K[i] * g; MR[i] = R[i] + K[i] * g; const a = Math.max(Math.abs(ML[i]), Math.abs(MR[i])); if (a > pk) pk = a; }
-      if (pk > 0.98){ const k = 0.98 / pk; for (let i = 0; i < ML.length; i++){ ML[i] *= k; MR[i] *= k; } }
-      files.push({name:`${base} - track and click.wav`, data:wav24([ML, MR], sr)});
-    }
+    if (want.mix) files.push({name:`${base} - track and click.wav`, data:wav24(mixCentre(L, R, K), sr)});
     if (want.track) files.push({name:`${base} - track edited.wav`, data:wav24([L, R], sr)});
     if (want.midi) files.push({name:`${base} - click.mid`, data:midiFile(r)});
     files.push({name:`${base} - running order.txt`, data:new TextEncoder().encode(runSheet(r))});
@@ -2341,6 +2335,14 @@ $("#exportBtn").onclick = async () => {
     await save(`${base} click.zip`, blob);
   } catch(err){ busy(""); toast("Export failed: " + err.message); }
 };
+// track in stereo as it is, click equally in both sides (-3 dB each, so it sits in the centre at the same loudness);
+// the whole mix is turned down only if it would clip
+function mixCentre(L, R, K){
+  const g = Math.SQRT1_2, ML = new Float32Array(L.length), MR = new Float32Array(L.length); let pk = 0;
+  for (let i = 0; i < ML.length; i++){ ML[i] = L[i] + K[i] * g; MR[i] = R[i] + K[i] * g; const a = Math.max(Math.abs(ML[i]), Math.abs(MR[i])); if (a > pk) pk = a; }
+  if (pk > 0.98){ const k = 0.98 / pk; for (let i = 0; i < ML.length; i++){ ML[i] *= k; MR[i] *= k; } }
+  return [ML, MR];
+}
 function runSheet(r){
   const lines = [`${track.name} — running order`, `Count-in: ${S.set.countIn} bar(s)`, ""];
   for (const c of r){
@@ -2355,7 +2357,9 @@ const ascii = v => String(v ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g,
 const fileSafe = v => ascii(v).replace(/[\\/:*?"<>|]+/g, "-").trim() || "Song";
 const asq = v => ascii(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 const qlFOH = () => S.set.qlTrack === "foh";
-const qlRouting = () => qlFOH() ? "Click is on output 1 (in-ears), track on output 2 (FOH)." : "Click only, on outputs 1 and 2 (both ears of the in-ears). The track is not in the file.";
+const qlMix = () => S.set.qlTrack === "mix";
+const qlHasTrack = () => qlFOH() || qlMix();   // the track is in the files, so they play from the top of the song
+const qlRouting = () => qlMix() ? "Track in stereo with the click down the centre, on outputs 1 and 2. Never send it to FOH." : qlFOH() ? "Click is on output 1 (in-ears), track on output 2 (FOH)." : "Click only, on outputs 1 and 2 (both ears of the in-ears). The track is not in the file.";
 const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? track.name : "Demo song");
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
@@ -2368,7 +2372,7 @@ function qlabPlan(){
   for (const c of r){
     const clicks = (c.kind === "sec" || c.kind === "click") && c.click;
     if (c.goStart && cur.length){ segs.push(cur); cur = []; heard = false; quiet = 0; }
-    else if (!qlFOH() && clicks && heard && quiet > QUIET && cur.length){ segs.push(cur); cur = []; c.clickIn = true; }
+    else if (!qlHasTrack() && clicks && heard && quiet > QUIET && cur.length){ segs.push(cur); cur = []; c.clickIn = true; }
     cur.push(c);
     if (clicks){ heard = true; quiet = 0; } else if (c.kind !== "lead") quiet += c.dur;
   }
@@ -2379,7 +2383,7 @@ function qlabPlan(){
   segs.forEach((seg, si) => {
     let list = seg.map(c => ({...c})), trimmed = false;
     const music = c => c.kind === "sec" || c.kind === "click";
-    if (!qlFOH()){
+    if (!qlHasTrack()){
       // click only: the cue starts where the click comes in (with the count-in), not at the top of the song,
       // and stops after the last click. Nothing in front of the click to drift out of time.
       const fi = list.findIndex(c => music(c) && c.click);
@@ -2441,7 +2445,7 @@ function qlabScript(cues, song){
 `-- 3. Press Run (the play button) in Script Editor. The first time, macOS asks to let`,
 `--    Script Editor control QLab: click Allow (or OK).`,
 `--`,
-`-- ${qlFOH() ? "Output 1 = click (band and MD in-ears). Output 2 = track (FOH)." : "Outputs 1 and 2 = click in both ears (band and MD in-ears). Click only: the track is not in these files."}`,
+`-- ${qlMix() ? "Outputs 1 and 2 = track in stereo with the click down the centre." : qlFOH() ? "Output 1 = click (band and MD in-ears). Output 2 = track (FOH)." : "Outputs 1 and 2 = click in both ears (band and MD in-ears). Click only: the track is not in these files."}`,
 ``,
 `property audioFiles : {${audio.map(c => `"${asq(c.file)}"`).join(", ")}}`,
 ``,
@@ -2461,7 +2465,7 @@ function qlabScript(cues, song){
     if (c.type === "audio"){
       const v = "cue" + (i + 1);
       L.push(`	-- ${asq(c.num)}: ${asq(c.name)}`);
-      L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}", ${qlFOH()})`);
+      L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}", ${qlHasTrack()})`);
       L.push(`	try`, `		tell application id "com.figure53.QLab.5" to set isBroken to broken of ${v}`, `		if isBroken then set end of problems to "Cue ${asq(c.num)}: QLab can't open ${asq(c.file)}. Check it's in the same folder as this script, then re-target the cue to it."`, `	end try`);
       L.push(`	set audioCue to ${v}`);
       if (c.marks.length || c.last !== 1){
@@ -2572,7 +2576,7 @@ function qlabScript(cues, song){
 }
 function cueSheet(cues, song){
   const out = [`${ascii(song)} - QLab cue sheet (made with Pit Click)`, ``,
-    ...(qlFOH() ? [`Output 1 = click -> band and MD in-ears. Never send it to FOH.`, `Output 2 = track -> FOH.`]
+    ...(qlMix() ? [`Outputs 1 and 2 = track in stereo with the click down the centre -> the mix that needs both.`, `Never send it to FOH: the click is in it.`] : qlFOH() ? [`Output 1 = click -> band and MD in-ears. Never send it to FOH.`, `Output 2 = track -> FOH.`]
       : [`Outputs 1 and 2 = click, in both ears -> band and MD in-ears. Never send it to FOH.`, `Click only: the track was just a reference and is not in these files.`]), ``,
     `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
   let go = 0;
@@ -2609,7 +2613,8 @@ $("#qlabBtn").onclick = async () => {
     for (const c of cues){
       if (c.type !== "audio") continue;
       const {sr, L, R, K} = renderChunks(c.list);
-      if (qlFOH()){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:c.file, data:wav24([K, M], sr)}); }
+      if (qlMix()) files.push({name:c.file, data:wav24(mixCentre(L, R, K), sr)});
+      else if (qlFOH()){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:c.file, data:wav24([K, M], sr)}); }
       else files.push({name:c.file, data:wav24([K], sr)});   // the track was only a reference: click alone
     }
     files.push({name:"Import into QLab.applescript", data:enc.encode(qlabScript(cues, song))});
@@ -2619,7 +2624,7 @@ $("#qlabBtn").onclick = async () => {
   } catch(err){ busy(""); toast("Export failed: " + err.message); }
 };
 $("#qlName").addEventListener("change", e => { mut(() => S.set.qlName = e.target.value, {free:true}); });
-$("#qlTrack").addEventListener("change", e => { mut(() => S.set.qlTrack = e.target.value === "foh" ? "foh" : "none", {free:true}); });
+$("#qlTrack").addEventListener("change", e => { mut(() => S.set.qlTrack = ["foh", "mix"].includes(e.target.value) ? e.target.value : "none", {free:true}); });
 $("#qlNum").addEventListener("change", e => { mut(() => S.set.qlNum = ascii(e.target.value) || "1", {free:true}); });
 $("#saveProj").onclick = () => {
   const data = JSON.stringify({app:"pit-click", version:1, track:track ? track.name : "", duration:track ? track.dur : 0, ...JSON.parse(snapshot())}, null, 2);
