@@ -18,7 +18,7 @@ Export works in claude.ai and in any normal browser (it falls back to a regular 
 
 Step 3 has **Export for QLab**. It gives one zip with:
 
-- a stereo WAV per cue: click on channel 1 (output 1, in-ears), track on channel 2 (output 2, FOH)
+- a WAV per cue with the click on output 1 (in-ears). By default it's click only, because the track is usually just a reference; set **The track** to *Plays in the show* to add it on output 2 for FOH
 - vamps rendered once and marked as looping slices, with a Devamp cue for each
 - songs split into separate cues at any running-order entry marked **Wait for GO**
 - `Import into QLab.applescript`, which builds the cues in the open QLab 5 workspace

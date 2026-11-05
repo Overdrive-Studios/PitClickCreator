@@ -211,7 +211,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v18</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v19</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -294,10 +294,13 @@ body.locked .pane .card{opacity:.75}
   <section class="out" id="paneOut" role="tabpanel" aria-labelledby="tabOut" hidden>
     <div class="card qlab">
       <h2>QLab</h2>
-      <p class="sub">One zip with everything QLab needs: the audio for each cue (click on output 1, track on output 2), the vamps already set to loop, and a script that builds the cues in QLab 5. Whoever runs the show just presses GO.</p>
+      <p class="sub">One zip with everything QLab needs: the audio for each cue, the vamps already set to loop, and a script that builds the cues in QLab 5. Whoever runs the show just presses GO. <span id="qlRoute"></span></p>
       <div class="mix">
         <label><span class="lbl">Song name</span><input type="text" id="qlName" placeholder="Song name"></label>
         <label><span class="lbl">First cue number</span><input type="text" id="qlNum" value="1" style="width:6em" class="num"></label>
+        <label><span class="lbl">The track</span><select id="qlTrack">
+          <option value="none">Reference only: click only</option>
+          <option value="foh">Plays in the show: to FOH</option></select></label>
       </div>
       <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
       <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
@@ -305,7 +308,7 @@ body.locked .pane .card{opacity:.75}
         <li>Unzip into your show folder and keep the files together.</li>
         <li>Open QLab 5 and your workspace, and click the cue these should go after.</li>
         <li>Open <b>Import into QLab.applescript</b> and press Run. Allow it to control QLab the first time.</li>
-        <li>Patch output 1 to the in-ear mix and output 2 to FOH.</li>
+        <li id="qlPatch">Patch output 1 to the in-ear mix.</li>
       </ol>
     </div>
     <div class="card">
@@ -499,7 +502,7 @@ let selSec = null;
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1"};
+const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1", qlTrack:"none"};
 function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
 function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
@@ -1504,6 +1507,9 @@ function renderSettings(){
   $("#anchorChk").checked = s.anchor !== false;
   $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
   $("#qlNum").value = s.qlNum || "1";
+  $("#qlTrack").value = s.qlTrack === "foh" ? "foh" : "none";
+  $("#qlRoute").textContent = qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, on output 1 for the in-ears. The track stays out of QLab.";
+  $("#qlPatch").textContent = qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch output 1 to the in-ear mix.";
   renderQlabPreview();
   $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
@@ -2063,6 +2069,8 @@ function runSheet(r){
 const ascii = v => String(v ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, "-").replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, " ").trim();
 const fileSafe = v => ascii(v).replace(/[\\/:*?"<>|]+/g, "-").trim() || "Song";
 const asq = v => ascii(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const qlFOH = () => S.set.qlTrack === "foh";
+const qlRouting = () => qlFOH() ? "Click is on output 1 (in-ears), track on output 2 (FOH)." : "Click only, on output 1 (in-ears). The track is not in the file.";
 const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? track.name : "Demo song");
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
@@ -2098,7 +2106,7 @@ function qlabPlan(){
     const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
     cues.push({type:"audio", num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
       what: si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
-      notes: (si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". Click is on output 1 (in-ears), track on output 2 (FOH)."});
+      notes: (si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
     for (const v of vamps){
       const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = `m.${v.bar}-${v.bar + v.bars - 1}`;
       cues.push({type:"devamp", num:num(), target:aNum, name:nm, what:`${nm} (${bars}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
@@ -2118,7 +2126,7 @@ function qlabScript(cues, song){
 `-- 3. Press Run (the play button) in Script Editor. The first time, macOS asks to let`,
 `--    Script Editor control QLab: click Allow (or OK).`,
 `--`,
-`-- Output 1 = click (band and MD in-ears). Output 2 = track (FOH).`,
+`-- ${qlFOH() ? "Output 1 = click (band and MD in-ears). Output 2 = track (FOH)." : "Output 1 = click (band and MD in-ears). Click only: the track is not in these files."}`,
 ``,
 `property audioFiles : {${audio.map(c => `"${asq(c.file)}"`).join(", ")}}`,
 ``,
@@ -2137,7 +2145,7 @@ function qlabScript(cues, song){
     if (c.type === "audio"){
       const v = "cue" + (i + 1);
       L.push(`	-- ${asq(c.num)}: ${asq(c.name)}`);
-      L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}")`);
+      L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}", ${qlFOH()})`);
       L.push(`	set audioCue to ${v}`);
       if (c.marks.length || c.last !== 1){
         L.push(`	if not (my setSlices(${v}, {${c.marks.map(m => `{${t(m.time)}, ${m.count}}`).join(", ")}}, ${c.last})) then set end of problems to "Cue ${asq(c.num)}: set the vamp slices by hand (see Cue sheet.txt)."`);
@@ -2183,7 +2191,7 @@ function qlabScript(cues, song){
 `	return f`,
 `end findFolder`,
 ``,
-`on addAudio(p, num, nm, nt)`,
+`on addAudio(p, num, nm, nt, withTrack)`,
 `	set theFile to (POSIX file p) as alias`,
 `	tell application id "com.figure53.QLab.5" to tell front workspace`,
 `		make type "Audio"`,
@@ -2194,12 +2202,14 @@ function qlabScript(cues, song){
 `		end try`,
 `		set q name of theCue to nm`,
 `		set notes of theCue to nt`,
-`		-- file channel 1 (click) to output 1 only, channel 2 (track) to output 2 only`,
+`		-- click (file channel 1) to output 1 only; the track (channel 2, if there is one) to output 2 only`,
 `		try`,
 `			setLevel theCue row 1 column 1 db 0`,
 `			setLevel theCue row 1 column 2 db -120`,
-`			setLevel theCue row 2 column 1 db -120`,
-`			setLevel theCue row 2 column 2 db 0`,
+`			if withTrack then`,
+`				setLevel theCue row 2 column 1 db -120`,
+`				setLevel theCue row 2 column 2 db 0`,
+`			end if`,
 `		end try`,
 `	end tell`,
 `	return theCue`,
@@ -2243,7 +2253,7 @@ function qlabScript(cues, song){
 function cueSheet(cues, song){
   const out = [`${ascii(song)} - QLab cue sheet (made with Pit Click)`, ``,
     `Output 1 = click -> band and MD in-ears. Never send it to FOH.`,
-    `Output 2 = track -> FOH.`, ``,
+    qlFOH() ? `Output 2 = track -> FOH.` : `Click only: the track was just a reference and is not in these files.`, ``,
     `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
   cues.forEach((c, i) => out.push(`${String(i + 1).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
   out.push(``, `Vamps loop in QLab until their "Leave vamp" cue is pressed. Press it only while that vamp is`,
@@ -2275,8 +2285,8 @@ $("#qlabBtn").onclick = async () => {
     for (const c of cues){
       if (c.type !== "audio") continue;
       const {sr, L, R, K} = renderChunks(c.list);
-      const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5;
-      files.push({name:c.file, data:wav24([K, M], sr)});
+      if (qlFOH()){ const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5; files.push({name:c.file, data:wav24([K, M], sr)}); }
+      else files.push({name:c.file, data:wav24([K], sr)});   // the track was only a reference: click alone
     }
     files.push({name:"Import into QLab.applescript", data:enc.encode(qlabScript(cues, song))});
     files.push({name:"Cue sheet.txt", data:enc.encode(cueSheet(cues, song))});
@@ -2285,6 +2295,7 @@ $("#qlabBtn").onclick = async () => {
   } catch(err){ busy(""); toast("Export failed: " + err.message); }
 };
 $("#qlName").addEventListener("change", e => { mut(() => S.set.qlName = e.target.value, {free:true}); });
+$("#qlTrack").addEventListener("change", e => { mut(() => S.set.qlTrack = e.target.value === "foh" ? "foh" : "none", {free:true}); });
 $("#qlNum").addEventListener("change", e => { mut(() => S.set.qlNum = ascii(e.target.value) || "1", {free:true}); });
 $("#saveProj").onclick = () => {
   const data = JSON.stringify({app:"pit-click", version:1, track:track ? track.name : "", duration:track ? track.dur : 0, ...JSON.parse(snapshot())}, null, 2);
