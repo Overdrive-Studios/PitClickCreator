@@ -226,7 +226,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v31</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v32</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -2232,9 +2232,10 @@ function renderChunks(r){
   return {sr, L, R:Rr, K};
 }
 function wav24(chs, sr){
-  const n = chs[0].length, nc = chs.length, ba = nc * 3, buf = new ArrayBuffer(44 + n * ba), dv = new DataView(buf), u8 = new Uint8Array(buf);
+  // RIFF chunks must be an even number of bytes: an odd-length data chunk gets a pad byte, or Core Audio (QLab) can refuse the file
+  const n = chs[0].length, nc = chs.length, ba = nc * 3, pad = (n * ba) & 1, buf = new ArrayBuffer(44 + n * ba + pad), dv = new DataView(buf), u8 = new Uint8Array(buf);
   const ws = (o, s) => { for (let i = 0; i < s.length; i++) u8[o + i] = s.charCodeAt(i); };
-  ws(0, "RIFF"); dv.setUint32(4, 36 + n * ba, true); ws(8, "WAVE"); ws(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, nc, true);
+  ws(0, "RIFF"); dv.setUint32(4, 36 + n * ba + pad, true); ws(8, "WAVE"); ws(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, nc, true);
   dv.setUint32(24, sr, true); dv.setUint32(28, sr * ba, true); dv.setUint16(32, ba, true); dv.setUint16(34, 24, true); ws(36, "data"); dv.setUint32(40, n * ba, true);
   let p = 44;
   for (let i = 0; i < n; i++) for (let c = 0; c < nc; c++){ let v = chs[c][i]; v = v > 1 ? 1 : v < -1 ? -1 : v; const iv = Math.round(v * 8388607); u8[p] = iv & 255; u8[p+1] = (iv >> 8) & 255; u8[p+2] = (iv >> 16) & 255; p += 3; }
@@ -2452,6 +2453,7 @@ function qlabScript(cues, song){
       const v = "cue" + (i + 1);
       L.push(`	-- ${asq(c.num)}: ${asq(c.name)}`);
       L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}", ${qlFOH()})`);
+      L.push(`	try`, `		tell application id "com.figure53.QLab.5" to set isBroken to broken of ${v}`, `		if isBroken then set end of problems to "Cue ${asq(c.num)}: QLab can't open ${asq(c.file)}. Check it's in the same folder as this script, then re-target the cue to it."`, `	end try`);
       L.push(`	set audioCue to ${v}`);
       if (c.marks.length || c.last !== 1){
         L.push(`	if not (my setSlices(${v}, {${c.marks.map(m => `{${t(m.time)}, ${m.count}}`).join(", ")}}, ${c.last})) then set end of problems to "Cue ${asq(c.num)}: set the vamp slices by hand (see Cue sheet.txt)."`);
