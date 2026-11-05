@@ -84,6 +84,12 @@ label.file.disabled{opacity:.45;pointer-events:none}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
 .seg button{border:0;background:transparent;padding:7px 12px;cursor:pointer}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--on-ink)}
+.ci{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ci .cil{font-size:13px;color:var(--muted)}
+.ci .seg button{padding:6px 11px;font-size:13px}
+.ci .seg button:not(:last-child){border-right:1px solid var(--line)}
+.ci input{width:3.6em}
+.tsep{width:1px;align-self:stretch;background:var(--line);margin:0 2px}
 
 /* lane */
 .lanebox{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -222,7 +228,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v20</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v21</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -289,6 +295,8 @@ body.locked .pane .card{opacity:.75}
   <section class="pane" id="paneShow" role="tabpanel" aria-labelledby="tabShow">
     <div class="card">
       <div class="tools">
+        <span class="ci" data-ci-host title="Count-in before the song"><span class="cil">Count-in</span></span>
+        <span class="tsep"></span>
         <select id="addSel" aria-label="Section to add"></select>
         <button class="btn" id="addEnt">Add</button>
         <button class="btn" id="addIntro">Intro click</button>
@@ -326,7 +334,7 @@ body.locked .pane .card{opacity:.75}
       <h2>Click &amp; mix</h2>
       <div class="mix">
         <label><span class="lbl">Count-in</span>
-          <span style="display:flex;align-items:center;gap:6px"><input type="number" id="setCount" min="0" max="16" step="1" style="width:4em"> <small>bars</small></span></label>
+          <span class="ci" data-ci-host></span></label>
         <label><span class="lbl">Sound</span>
           <select id="setSound"><option value="beep">Beep</option><option value="wood">Woodblock</option><option value="low">Low click</option></select></label>
         <label><span class="lbl">Subdivision</span>
@@ -522,7 +530,7 @@ let locked = false; try { locked = localStorage.getItem("pitclick:locked") === "
 function applyLock(){
   document.body.classList.toggle("locked", locked);
   const b = $("#lockBtn"); b.setAttribute("aria-pressed", locked); b.textContent = locked ? "Unlock" : "Lock";
-  const sel = "#paneMap input, #paneMap button, #paneMap select, #paneShow input, #paneShow button, #paneShow select, #setCount, #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
+  const sel = "#paneMap input, #paneMap button, #paneMap select, #paneShow input, #paneShow button, #paneShow select, [data-ci], [data-ci-other], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
   document.querySelectorAll(sel).forEach(el => { if (locked) el.disabled = true; else if (el.dataset.lk !== "1") el.disabled = false; });
   document.querySelectorAll("label.file").forEach(l => l.classList.toggle("disabled", locked));
   $("#tapBtn").disabled = false;
@@ -1522,10 +1530,24 @@ function renderSettings(){
   $("#qlRoute").textContent = qlFOH() ? "Click on output 1 for the in-ears, track on output 2 for FOH." : "Click only, on output 1 for the in-ears. The track stays out of QLab.";
   $("#qlPatch").textContent = qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch output 1 to the in-ear mix.";
   renderQlabPreview();
-  $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
+  document.querySelectorAll("[data-ci-host]").forEach(h => {
+    const lbl = h.querySelector(".cil"); const n = s.countIn | 0;
+    h.innerHTML = (lbl ? lbl.outerHTML : "") + `<span class="seg" role="group" aria-label="Count-in">${[[0, "None"], [1, "1 bar"], [2, "2 bars"]].map(([v, t]) => `<button type="button" data-ci="${v}" aria-pressed="${n === v}">${t}</button>`).join("")}</span>` +
+      `<input type="number" data-ci-other min="0" max="16" step="1" value="${n > 2 ? n : ""}" placeholder="other" aria-label="Other count-in, in bars" title="Any other number of bars">`;
+  });
+  $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
-$("#setCount").onchange = e => mut(() => S.set.countIn = clamp(Math.round(+e.target.value || 0), 0, 16));
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-ci]"); if (!b || b.disabled) return;
+  const v = +b.dataset.ci; if ((S.set.countIn | 0) === v) return;
+  mut(() => S.set.countIn = v); toast(v ? `${v}-bar count-in` : "No count-in");
+});
+document.addEventListener("change", e => {
+  if (!e.target.matches("[data-ci-other]")) return;
+  const v = clamp(Math.round(+e.target.value || 0), 0, 16);
+  mut(() => S.set.countIn = v);
+});
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
 $("#anchorChk").onchange = e => { mut(() => S.set.anchor = e.target.checked, {free:true}); toast(e.target.checked ? "Editing a section won't move the others." : "Sections are chained: making one longer pushes the rest later."); };
 $("#setSound").onchange = e => mut(() => S.set.sound = e.target.value);
