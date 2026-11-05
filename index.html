@@ -228,7 +228,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v24</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v25</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -649,10 +649,14 @@ function build(v){
         const a = e.skipStart || 0, z = s.bars - (e.skipEnd || 0), nb = z - a;
         if (nb <= 0) return;
         const reps = Math.max(1, e.repeat | 0);
-        for (let p = 0; p < reps; p++){
-          push({kind:"sec", sid:s.id, ent:ei, pass:p, passes:reps, open:!!e.open, safety: !e.open && !!e.safety && reps > 1, goStart: p === 0 && !!e.cue && k > 0, dur:tm.barT[z] - tm.barT[a], src:s.start + tm.barT[a], ...meterOf(s), tm, barOff:a, bar, bars:nb, click:!s.mute, clickFrom:0, label:s.label, name:s.name});
-          bar += nb;
-        }
+        const piece = (b0, b1, extra) => { push({kind:"sec", sid:s.id, ent:ei, pass:0, passes:1, open:false, safety:false, goStart:false, dur:tm.barT[b1] - tm.barT[b0], src:s.start + tm.barT[b0], ...meterOf(s), tm, barOff:b0, bar, bars:b1 - b0, click:!s.mute, clickFrom:0, label:s.label, name:s.name, ...extra}); bar += b1 - b0; };
+        // a vamp or safety can loop just some of the bars: the ones before play once on the way in, the ones after on the way out
+        const loops = e.open || (e.safety && reps > 1);
+        const la = loops ? a + clamp((e.loopFrom | 0) || 1, 1, nb) - 1 : a;
+        const lb = loops ? Math.max(la + 1, a + clamp((e.loopTo | 0) || nb, 1, nb)) : z;
+        if (la > a) piece(a, la, {goStart: !!e.cue && k > 0, part:"in"});
+        for (let p = 0; p < reps; p++) piece(la, lb, {pass:p, passes:reps, open:!!e.open, safety: !e.open && !!e.safety && reps > 1, goStart: p === 0 && la === a && !!e.cue && k > 0, part: la > a || lb < z ? "loop" : undefined});
+        if (lb < z) piece(lb, z, {part:"out"});
         // a hold / fermata between this section and the next one in the recording plays as free time
         const nx = ents[k + 1], si = secs.indexOf(s);
         if (nx && nx.kind === "sec" && !nx.cue && secs[si + 1] && nx.sec === secs[si + 1].id && !e.skipEnd && !nx.skipStart && !e.open && secs[si + 1].start > s.end + 1e-4)
@@ -1057,7 +1061,7 @@ function drawLane(){
         let cx = x + lw + 10; const nm = (c.name || "") + "  " + sigTxt(c) + "  ";
         g.fillText(nm, cx, 12.5); cx += g.measureText(nm).width;
         cx += drawNote(g, c.unit, cx, 19, 15) + 2;
-        const tt = "= " + fmtBpm(c.bpm) + (hasRamp(c) ? " → " + fmtBpm(c.rampTo) + (c.rampTo < c.bpm ? " rit." : " accel.") : "") + (c.open ? "  · till ready" : c.safety ? "  · safety ×" + c.passes : c.passes > 1 ? "  · ×" + c.passes : "");
+        const tt = "= " + fmtBpm(c.bpm) + (hasRamp(c) ? " → " + fmtBpm(c.rampTo) + (c.rampTo < c.bpm ? " rit." : " accel.") : "") + (c.open ? "  · vamp, till ready" : c.safety ? "  · safety ×" + c.passes : c.part === "out" ? "  · out" : c.passes > 1 ? "  · ×" + c.passes : "");
         g.fillText(tt, cx, 12.5); g.restore();
       }
     }
@@ -1443,8 +1447,9 @@ function renderArr(){
     const s = secById(e.sec); if (!s) return "";
     const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = e.open || e.repeat > 1;
     const tags = [];
-    if (e.open) tags.push(`<span class="badge">till GO</span>`);
-    else if (e.safety && e.repeat > 1) tags.push(`<span class="badge" title="Plays ${e.repeat} times unless GO skips the rest">safety ×${e.repeat}</span>`);
+    const lr = (e.open || e.safety) && (e.loopFrom > 1 || (e.loopTo && e.loopTo < nb)) ? ` · loops ${(e.loopTo || nb) - (e.loopFrom || 1) + 1} bar${(e.loopTo || nb) - (e.loopFrom || 1) ? "s" : ""}` : "";
+    if (e.open) tags.push(`<span class="badge">till GO${lr}</span>`);
+    else if (e.safety && e.repeat > 1) tags.push(`<span class="badge" title="Plays ${e.repeat} times unless GO skips the rest">safety ×${e.repeat}${lr}</span>`);
     else if (e.repeat > 1) tags.push(`<span class="badge">×${e.repeat}</span>`);
     if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
     if (e.cue && i > 0) tags.unshift(`<span class="badge click" title="Stops and waits for GO before this">GO</span>`);
@@ -1486,6 +1491,10 @@ function renderShowInsp(span){
           : "Plays this many times. No GO needed.";
         return `<div class="f"><span>Type</span><span class="seg" role="group" aria-label="How it plays">${[["fixed", "As written"], ["vamp", "Vamp"], ["safety", "Safety"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}">${t}</button>`).join("")}</span></div>
       <label class="f"><span>${lab}</span><input type="number" data-f="repeat" value="${e.repeat}" min="1" max="99">${mode === "safety" ? " <small>times</small>" : ""}</label>
+      ${mode === "fixed" ? "" : (() => { const nb = s.bars - (e.skipStart || 0) - (e.skipEnd || 0), lf = clamp((e.loopFrom | 0) || 1, 1, nb), lt = Math.max(lf, clamp((e.loopTo | 0) || nb, 1, nb));
+        const first = (span[i] ? span[i].a : 1);
+        return `<div class="f"><span>Loop bars</span><input type="number" data-f="loopFrom" value="${lf}" min="1" max="${nb}" style="width:3.8em" aria-label="Loop from bar"> to <input type="number" data-f="loopTo" value="${lt}" min="1" max="${nb}" style="width:3.8em" aria-label="Loop to bar"> <small>of ${nb} · ${lt - lf + 1} bar${lt - lf ? "s" : ""}</small></div>
+        ${lf > 1 || lt < nb ? `<p class="note">${lf > 1 ? `Bars 1–${lf - 1} play once on the way in. ` : ""}${lt < nb ? `Bars ${lt + 1}–${nb} play once on the way out.` : ""}</p>` : ""}`; })()}
       <p class="note">${help}</p>`; })()}</div>
     <div class="group"><h3>Cut bars</h3>
       <label class="f"><span>From the start</span><input type="number" data-f="skipStart" value="${e.skipStart || 0}" min="0" max="${s.bars - 1}"> <small>bars</small></label>
@@ -1512,6 +1521,13 @@ function showChange(ev){
     if (f === "open") en.open = ev.target.checked;
     else if (f === "cue") en.cue = ev.target.checked;
     else if (f === "label" || f === "name") en[f] = v;
+    else if (f === "loopFrom" || f === "loopTo"){
+      const s = secById(en.sec), nb = s ? s.bars - (en.skipStart || 0) - (en.skipEnd || 0) : 1;
+      en[f] = clamp(Math.round(+v || 1), 1, nb);
+      const lf = (en.loopFrom | 0) || 1, lt = (en.loopTo | 0) || nb;
+      if (lf > lt){ if (f === "loopFrom") en.loopTo = lf; else en.loopFrom = lt; }
+      if (((en.loopFrom | 0) || 1) === 1 && ((en.loopTo | 0) || nb) === nb){ delete en.loopFrom; delete en.loopTo; }
+    }
     else if (f === "repeat"){ en.repeat = clamp(Math.round(+v || 1), 1, 99); if (en.safety && en.repeat < 2){ en.repeat = 2; toast("A safety needs at least 2 passes."); } }
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
     else if (f === "bars") en.bars = clamp(Math.round(+v || 1), 1, 999);
