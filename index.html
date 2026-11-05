@@ -226,7 +226,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v30</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v31</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -2352,7 +2352,16 @@ const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? trac
 function qlabPlan(){
   const r = build("show", true).filter(c => !(c.open && c.pass > 0));   // set-count repeats stay in the audio as written
   const segs = []; let cur = [];
-  for (const c of r){ if (c.goStart && cur.length){ segs.push(cur); cur = []; } cur.push(c); }
+  // Click only: when the click stops for a while (dialogue, free time, sections with no click) and then comes
+  // back, the comeback is its own GO with a count-in. Waiting inside one cue would drift out of time with the stage.
+  const QUIET = 8; let quiet = 0, heard = false;
+  for (const c of r){
+    const clicks = (c.kind === "sec" || c.kind === "click") && c.click;
+    if (c.goStart && cur.length){ segs.push(cur); cur = []; heard = false; quiet = 0; }
+    else if (!qlFOH() && clicks && heard && quiet > QUIET && cur.length){ segs.push(cur); cur = []; c.clickIn = true; }
+    cur.push(c);
+    if (clicks){ heard = true; quiet = 0; } else if (c.kind !== "lead") quiet += c.dur;
+  }
   if (cur.length) segs.push(cur);
   const song = qlSong(), base = ascii(S.set.qlNum || "1") || "1";
   let n = 0; const num = () => (n++ === 0 ? base : base + "." + (n - 1));
@@ -2365,7 +2374,10 @@ function qlabPlan(){
       // and stops after the last click. Nothing in front of the click to drift out of time.
       const fi = list.findIndex(c => music(c) && c.click);
       if (fi < 0) return;                                   // no click in this part at all: no cue
-      if (list.slice(0, fi).some(music)){ list = list.slice(fi); trimmed = true; }
+      // drop everything before the first click: the recording before bar 1, sections with no click, holds.
+      // A fresh count-in goes back on below, so GO always lands straight into it.
+      if (fi > 0){ list = list.slice(fi); trimmed = true; }
+      if (list[0].clickIn) trimmed = true;
       let li = list.length - 1; while (li > 0 && !(music(list[li]) && list[li].click)) li--;
       if (li < list.length - 1){ list = list.slice(0, li + 1); list.push({kind:"tail", dur:1.5, src:null, click:false, name:"Ring-out"}); }
     }
@@ -2390,8 +2402,8 @@ function qlabPlan(){
     const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? list[0].bars : 0;
     const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
     cues.push({type:"audio", num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
-      what: trimmed ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
-      notes: (trimmed ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
+      what: trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
+      notes: (trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
     let sk = 0;
     for (const v of vamps){
       if (v.vt === "safety"){
