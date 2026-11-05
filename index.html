@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v39</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v40</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -321,7 +321,7 @@ input[type=checkbox]{accent-color:var(--amber)}
         </div>
         <div class="lanehead">
           <span class="lbl" id="laneLbl">Show</span>
-          <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · click a name strip to select · pinch to zoom</span></span>
+          <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · click a name strip to pick, drag it to move · pinch to zoom</span></span>
           <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="0" max="100" step="0.1" value="0" style="width:130px" aria-label="Zoom"></label>
         </div>
         <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
@@ -1196,10 +1196,11 @@ function drawLane(){
       }
     }
   });
+  if (blockDrag && blockDrag.moved && blockDrag.drop){ g.fillStyle = C.amber; g.fillRect(Math.round(blockDrag.drop.x * pps) - 2, 0, 4, H); }
   $("#ph").style.left = (playhead * pps) + "px";
 }
 // drag anywhere on the lane (or the playhead) to scrub; playback resumes from where you let go
-let drag = null, secDrag = null;
+let drag = null, secDrag = null, blockDrag = null;
 function laneT(e){ const r = $("#laneInner").getBoundingClientRect(); return clamp((e.clientX - r.left) / pps, 0, tl().total); }
 // in the tempo map, grab a section's start line to slide it (and everything after it) to the audio
 function secEdgeAt(e){
@@ -1211,7 +1212,8 @@ function secEdgeAt(e){
 function startDrag(e){
   if (e.button > 0) return;
   e.preventDefault();
-  const sid = secEdgeAt(e);
+  const yTop = e.clientY - $("#laneInner").getBoundingClientRect().top;
+  const sid = yTop < 24 ? null : secEdgeAt(e);
   if (sid){
     stopIfPlaying(); hist.push(snapshot()); if (hist.length > 80) hist.shift();
     secDrag = {sid, id:e.pointerId, old: startsById(), base: snapshot()}; selSec = sid;
@@ -1220,11 +1222,17 @@ function startDrag(e){
   }
   const yIn = e.clientY - $("#laneInner").getBoundingClientRect().top;
   if (yIn < 24){
+    // the name strip: click picks (Shift / Cmd / Select mode add more), drag moves everything picked
     const t = laneT(e), c = tl().find(c => (c.kind === "sec" || c.kind === "click") && t >= c.t && t < c.t + c.dur);
-    if (c){
-      if (view === "map" && c.sid){ selSec = c.sid; }
-      else if (view === "show" && c.ent != null && S.arr[c.ent]){ selEnt = S.arr[c.ent].id; }
-      renderAll(); return;
+    const id = c ? (view === "map" ? c.sid : (c.ent != null && S.arr[c.ent] ? S.arr[c.ent].id : null)) : null;
+    if (id){
+      const k = pickCtx();
+      if (e.shiftKey || e.metaKey || e.ctrlKey || selectMode){ pickRows(e, k.ids, id, k.set, k.get, k.put); return; }
+      if (!(id === k.get() || k.set.has(id))){ k.set.clear(); k.put(id); renderAll(); }
+      if (locked) return;
+      blockDrag = {pid:e.pointerId, id, x0:e.clientX, t0:t, moved:false, view};
+      $("#laneInner").setPointerCapture(e.pointerId);
+      return;
     }
   }
   drag = {was:!!P, id:e.pointerId, x0:e.clientX};
@@ -1234,7 +1242,43 @@ function startDrag(e){
   playhead = laneT(e); updateReadout();
 }
 $("#laneInner").addEventListener("pointerdown", startDrag);
+function pickedSecIds(){ return S.sections.filter(x => x.id === selSec || multiSec.has(x.id)).map(x => x.id); }
+// Show view: where the picked entries would land (a gap between entries) for a time on the lane
+function entSlotAt(t){
+  const span = {}; for (const c of tl()) if (c.ent != null && c.kind !== "gap"){ const o = span[c.ent] || (span[c.ent] = {a:c.t, b:c.t + c.dur}); o.b = c.t + c.dur; }
+  const ks = Object.keys(span).map(Number).sort((x, y) => x - y);
+  for (const k of ks){ const o = span[k]; if (t < (o.a + o.b) / 2) return {slot:k, x:o.a}; }
+  const last = ks[ks.length - 1]; return last == null ? null : {slot:S.arr.length, x:span[last].b};
+}
+function moveBlock(e){
+  const b = blockDrag, t = laneT(e);
+  if (!b.moved){ if (Math.abs(e.clientX - b.x0) < 5) return; b.moved = true; stopIfPlaying(); $("#laneInner").classList.add("dragging");
+    if (b.view === "map"){ hist.push(snapshot()); if (hist.length > 80) hist.shift(); b.old = startsById(); b.ids = pickedSecIds(); } }
+  if (b.view === "map"){
+    // slide the picked sections along the recording; the others stay where they are
+    let dt = t - b.t0, lo = -Infinity, hi = Infinity;
+    const ids = new Set(b.ids);
+    S.sections.forEach((x, i) => {
+      if (!ids.has(x.id)) return;
+      lo = Math.max(lo, -b.old[x.id]);
+      const pv = S.sections[i - 1], nx = S.sections[i + 1];
+      if (pv && !ids.has(pv.id)) lo = Math.max(lo, b.old[pv.id] + 0.05 - b.old[x.id]);
+      if (nx && !ids.has(nx.id)) hi = Math.min(hi, b.old[nx.id] - 0.05 - b.old[x.id]);
+    });
+    dt = clamp(dt, lo, hi);
+    const pins = {}; b.ids.forEach(id => pins[id] = b.old[id] + dt);
+    reanchor(b.old, pins); b.dt = dt;
+    $("#roStatus").textContent = `${b.ids.length > 1 ? b.ids.length + " sections" : secById(b.id).label} ${dt >= 0 ? "+" : "−"}${Math.abs(dt).toFixed(3)} s`;
+  } else {
+    b.drop = entSlotAt(t);
+    $("#roStatus").textContent = b.drop ? "Drop to move here" : "";
+  }
+  invalidate(); if (!b.raf) b.raf = requestAnimationFrame(() => { if (blockDrag) blockDrag.raf = 0; drawLane(); });
+  const lane = $("#lane"), r = lane.getBoundingClientRect();
+  if (e.clientX > r.right - 30) lane.scrollLeft += 16; else if (e.clientX < r.left + 30) lane.scrollLeft -= 16;
+}
 $("#laneInner").addEventListener("pointermove", e => {
+  if (blockDrag && e.pointerId === blockDrag.pid){ moveBlock(e); return; }
   if (secDrag && e.pointerId === secDrag.id){
     const s = secById(secDrag.sid); if (!s) return;
     computeSrc(); const i = S.sections.indexOf(s), prev = S.sections[i - 1], next = S.sections[i + 1];
@@ -1253,6 +1297,13 @@ $("#laneInner").addEventListener("pointermove", e => {
   if (e.clientX > r.right - 30) lane.scrollLeft += 16; else if (e.clientX < r.left + 30) lane.scrollLeft -= 16;
 });
 function endDrag(e){
+  if (blockDrag && e.pointerId === blockDrag.pid){
+    const b = blockDrag; blockDrag = null; $("#laneInner").classList.remove("dragging"); $("#roStatus").textContent = "";
+    if (!b.moved) return;
+    if (b.view === "map"){ relabel(); saveLocal(); renderAll(); return; }
+    if (b.drop){ const from = S.arr.findIndex(x => x.id === b.id), slot = b.drop.slot; moveEnts(from, slot > from ? slot - 1 : slot, slot); }
+    renderAll(); return;
+  }
   if (secDrag && e.pointerId === secDrag.id){
     secDrag = null; $("#laneInner").classList.remove("dragging"); $("#roStatus").textContent = "";
     relabel(); saveLocal(); renderAll(); return;
