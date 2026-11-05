@@ -128,6 +128,11 @@ input[type=range]{width:100%;accent-color:var(--amber)}
 #songList .rm{font-size:13px;padding:1px 7px;color:var(--muted)}
 #songList .segue{font:11px var(--f-num);color:var(--vamp);padding:0 12px 4px 46px;margin-top:-2px}
 #songList .empty{padding:2px 12px 12px;font-size:12px}
+.selbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid var(--line)}
+.selbar #selMode[aria-pressed="true"]{background:var(--amber);color:var(--on-ink);border-color:var(--amber)}
+.selbar .selcount{font:600 12px var(--f-num);color:var(--amber)}
+.selbar .selhint{flex:1 1 260px;color:var(--muted);font-size:11.5px}
+body.selmode #mapBody .row,body.selmode #ents .row{cursor:copy}
 .inspector{background:var(--panel);border:1px solid var(--line);border-radius:10px;position:sticky;top:10px;max-height:calc(100vh - 20px);overflow:auto;min-width:0}
 .insp-title{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid var(--line);background:#2A2A2E;position:sticky;top:0;z-index:2}
 .arrange{display:flex;flex-direction:column;gap:10px;min-width:0}
@@ -236,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v38</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v39</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -322,6 +327,13 @@ input[type=checkbox]{accent-color:var(--amber)}
         <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
       </div>
       <div class="card">
+        <div class="selbar" id="selBar">
+          <button type="button" class="btn sm" id="selMode" aria-pressed="false" title="While this is on, each click adds or removes a row">Select</button>
+          <button type="button" class="btn sm" id="selAll">All</button>
+          <button type="button" class="btn sm" id="selNone">None</button>
+          <span id="selCount" class="selcount"></span>
+          <small class="selhint">Pick as many as you like, then drag any picked row by ⠿ to move them together. Shortcuts: Shift-click a run, ⌘/Ctrl-click one.</small>
+        </div>
         <div class="list" id="mapBody" hidden></div>
         <div class="list" id="ents"></div>
       </div>
@@ -1259,7 +1271,7 @@ function renderAll(){
   invalidate();
   // in the Show view the inspector shows the selected entry AND the section it plays, so nothing needs another page
   if (S && view === "show"){ const e = S.arr.find(x => x.id === selEnt) || S.arr[0]; if (e && e.kind === "sec") selSec = e.sec; }
-  renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout(); syncInspector(); renderSongs();
+  renderMap(); renderArr(); renderSettings(); drawLane(); updateReadout(); syncInspector(); renderSongs(); renderSelBar();
   // remember which controls are disabled for their own reasons, so unlocking doesn't enable them
   // rows are rebuilt each render: remember which of their controls are disabled for their own reasons
   document.querySelectorAll("#mapInsp [disabled], #showInsp [disabled]").forEach(el => el.dataset.lk = "1");
@@ -1490,22 +1502,43 @@ function moveSectionTo(from, to){
 }
 function moveSection(i, dir){ moveSectionTo(i, i + dir); }
 // Shift-click picks a run of rows, Cmd/Ctrl-click adds or removes one. Plain click picks just that row.
-let pickHinted = false;
+let pickHinted = false, selectMode = false;
 function pickRows(e, ids, id, set, getSel, setSel){
-  const cur = getSel();
+  const cur = getSel(); const add = e.metaKey || e.ctrlKey || (selectMode && !e.shiftKey);
   if (e.shiftKey && cur && cur !== id){
     const a = ids.indexOf(cur), b = ids.indexOf(id); set.clear();
     for (let k = Math.min(a, b); k <= Math.max(a, b); k++) if (ids[k] !== id) set.add(ids[k]);
     setSel(id);
-  } else if (e.metaKey || e.ctrlKey){
+  } else if (add){
     if (id === cur){ const nx = [...set][0]; if (nx){ set.delete(nx); setSel(nx); } }
     else if (set.has(id)) set.delete(id);
     else { if (cur) set.add(cur); setSel(id); }
   } else { if (!set.size && id === cur) return; set.clear(); setSel(id); }
   set.delete(getSel());
-  if (set.size && !pickHinted){ pickHinted = true; toast(`${set.size + 1} picked. Drag any of them by ⠿ to move them together.`); }
+  if (set.size && !pickHinted && !selectMode){ pickHinted = true; toast(`${set.size + 1} picked. Drag any of them by ⠿ to move them together.`); }
   renderAll();
 }
+// the picker bar works on whichever list is showing
+const pickCtx = () => view === "map"
+  ? {ids:S.sections.map(x => x.id), set:multiSec, get:() => selSec, put:v => selSec = v}
+  : {ids:S.arr.map(x => x.id), set:multiEnt, get:() => selEnt, put:v => selEnt = v};
+function renderSelBar(){
+  const c = pickCtx(), n = c.set.size + (c.get() ? 1 : 0);
+  $("#selMode").setAttribute("aria-pressed", selectMode); document.body.classList.toggle("selmode", selectMode);
+  $("#selCount").textContent = n > 1 ? `${n} picked` : selectMode ? "Click rows to pick them" : "";
+  $("#selNone").disabled = n < 2; $("#selAll").disabled = c.ids.length < 2 || n === c.ids.length;
+}
+$("#selMode").onclick = () => { selectMode = !selectMode; renderSelBar(); };
+$("#selAll").onclick = () => { const c = pickCtx(); if (!c.get()) c.put(c.ids[0]); c.set.clear(); c.ids.forEach(id => { if (id !== c.get()) c.set.add(id); }); renderAll(); };
+$("#selNone").onclick = () => { multiSec.clear(); multiEnt.clear(); renderAll(); };
+// on a Mac, Ctrl-click opens the context menu instead of clicking: treat it as "add this row"
+["#mapBody", "#ents"].forEach(sel => $(sel).addEventListener("contextmenu", e => {
+  if (!e.ctrlKey || e.target.closest("[data-a], input, select, button")) return;
+  const row = e.target.closest(".row"); if (!row) return;
+  e.preventDefault();
+  if (sel === "#mapBody") pickRows(e, S.sections.map(x => x.id), row.dataset.sid, multiSec, () => selSec, v => selSec = v);
+  else { const i = +row.dataset.i; if (S.arr[i]) pickRows(e, S.arr.map(x => x.id), S.arr[i].id, multiEnt, () => selEnt, v => selEnt = v); }
+}));
 // move every picked item as one block to a gap in the list (slot = 0..length); keeps their order
 function blockOrder(list, picked, slot){
   const ins = list.slice(0, slot).filter(x => !picked.has(x)).length, rest = list.filter(x => !picked.has(x)), blk = list.filter(x => picked.has(x));
