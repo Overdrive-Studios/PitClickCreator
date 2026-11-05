@@ -1,9 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta http-equiv="Cache-Control" content="no-cache">
 <title>Pit Click</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -228,14 +222,11 @@ input[type=checkbox]{accent-color:var(--amber)}
 .drop{position:fixed;inset:0;background:var(--amber-soft);border:3px dashed var(--amber);z-index:30;display:grid;place-items:center;font:700 24px var(--f-mark);pointer-events:none}
 .busy{position:fixed;inset:0;background:rgba(17,17,19,.7);display:grid;place-items:center;z-index:45;font-weight:600}
 </style>
-</head>
-<body>
-
 
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v27</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v29</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -465,6 +456,9 @@ function normMeter(o){
   if (o.clickOn !== "groups" && o.clickOn !== "all") o.clickOn = isCompound(o.num, o.den) ? "groups" : "all";
   return o;
 }
+// vamp / safety: e.vt is what it's called; e.open = loops until the MD's GO; e.safety = plays a set number of times
+const vtOf = e => e.vt || (e.open ? "vamp" : e.safety ? "safety" : "");
+const vtName = e => vtOf(e) === "safety" ? "safety" : "vamp";
 function normAll(){ S.sections.forEach(normMeter); S.arr.forEach(e => { if (e.kind === "click") normMeter(e); }); }
 const meterOf = o => ({bpm:o.bpm, num:o.num, den:o.den, unit:o.unit, groups:o.groups, clickOn:o.clickOn, rampTo:o.rampTo || 0, rampBars:o.rampBars || 0});
 const steady = o => ({...meterOf(o), rampTo:0, rampBars:0});
@@ -659,14 +653,14 @@ function build(v, forExport, forceKeep){
         const s = secById(e.sec); const tm = timeMap(s, s.bars);
         const a = e.skipStart || 0, z = s.bars - (e.skipEnd || 0), nb = z - a;
         if (nb <= 0) return;
-        const reps = e.open ? 1 : Math.max(1, e.repeat | 0);
+        const reps = Math.max(1, e.repeat | 0);
         const piece = (b0, b1, extra) => { push({kind:"sec", sid:s.id, ent:ei, pass:0, passes:1, open:false, safety:false, goStart:false, dur:tm.barT[b1] - tm.barT[b0], src:s.start + tm.barT[b0], ...meterOf(s), tm, barOff:b0, bar, bars:b1 - b0, click:!s.mute, clickFrom:0, label:s.label, name:s.name, ...extra}); bar += b1 - b0; };
         // a vamp or safety can loop just some of the bars: the ones before play once on the way in, the ones after on the way out
         const loops = e.open || (e.safety && reps > 1);
         const la = loops ? a + clamp((e.loopFrom | 0) || 1, 1, nb) - 1 : a;
         const lb = loops ? Math.max(la + 1, a + clamp((e.loopTo | 0) || nb, 1, nb)) : z;
         if (la > a) piece(a, la, {goStart: !!e.cue && k > 0, part:"in"});
-        for (let p = 0; p < reps; p++) piece(la, lb, {pass:p, passes:reps, open:!!e.open, safety: !e.open && !!e.safety && reps > 1, goStart: p === 0 && la === a && !!e.cue && k > 0, part: la > a || lb < z ? "loop" : undefined});
+        for (let p = 0; p < reps; p++) piece(la, lb, {pass:p, passes:reps, vt:vtOf(e), open:!!e.open, safety: !e.open && !!e.safety && reps > 1, goStart: p === 0 && la === a && !!e.cue && k > 0, part: la > a || lb < z ? "loop" : undefined});
         if (lb < z) piece(lb, z, {part:"out"});
         // a hold / fermata between this section and the next one in the recording plays as free time
         const nx = ents[k + 1], si = secs.indexOf(s);
@@ -974,7 +968,7 @@ function goPress(){
   }
   const now = actx.currentTime, lp0 = livePos();
   // GO on a safety's last pass has nothing left to skip; don't let it carry on to the next vamp
-  if (lp0 && lp0.ch && lp0.ch.safety && lp0.ch.pass === lp0.ch.passes - 1){ toast("That's already the safety's last pass."); return; }
+  if (lp0 && lp0.ch && lp0.ch.safety && lp0.ch.pass === lp0.ch.passes - 1){ toast("That's already the last time through."); return; }
   P.go = true;
   // GO in the last moments of a pass: the next pass may already be queued. Pull it back out.
   const k = P.sched.findIndex(e => (e.ch.open || e.ch.safety) && (e.ch.open ? e.pass : e.ch.pass) > 0 && e.at > now + 0.005);
@@ -1013,8 +1007,8 @@ function updateReadout(lp){
       secHTML = `<span class="mark${c.kind==="click"?" click":""}${c.open||c.passes>1?" vamp":""}">${esc(c.label)}</span>${esc(c.name || "")}${passTxt}`;
     } else { secHTML = esc(c.name || (c.kind === "tail" ? "Tail" : c.kind === "pre" ? "Before bar 1" : "—")); if (c.kind === "gap") barTxt = "hold"; }
     if (P && P.waiting) status = `Stopped. GO starts ${P.waiting.label ? P.waiting.label + " " : ""}${P.waiting.name || ""} with a count-in`;
-    else if (lp && c.open) status = P && P.go ? "GO — leaving after this pass" : "Vamp — waiting for GO";
-    else if (lp && c.safety) status = c.pass === c.passes - 1 ? `Safety, last pass` : P && P.go ? "GO — skipping the rest of the safety" : `Safety pass ${c.pass + 1} of ${c.passes} — GO to skip the rest`;
+    else if (lp && c.open) status = P && P.go ? "GO — leaving after this pass" : (c.vt === "safety" ? "Safety" : "Vamp") + " — waiting for GO";
+    else if (lp && c.safety) status = c.pass === c.passes - 1 ? `${c.vt === "vamp" ? "Vamp" : "Safety"}, last time` : P && P.go ? "GO — moving on after this pass" : `${c.vt === "vamp" ? "Vamp" : "Safety"} ${c.pass + 1} of ${c.passes} — GO to move on early`;
     else if (P && P.go) status = "GO armed for next vamp";
   }
   $("#roBar").textContent = barTxt; $("#roSec").innerHTML = secHTML; $("#roBpm").innerHTML = bpmTxt;
@@ -1139,7 +1133,7 @@ function drawLane(){
         let cx = x + lw + 10; const nm = (c.name || "") + "  " + sigTxt(c) + "  ";
         g.fillText(nm, cx, 12.5); cx += g.measureText(nm).width;
         cx += drawNote(g, c.unit, cx, 19, 15) + 2;
-        const tt = "= " + fmtBpm(c.bpm) + (hasRamp(c) ? " → " + fmtBpm(c.rampTo) + (c.rampTo < c.bpm ? " rit." : " accel.") : "") + (c.open ? "  · vamp, till ready" : c.safety ? "  · safety ×" + c.passes : c.part === "out" ? "  · out" : c.passes > 1 ? "  · ×" + c.passes : "");
+        const tt = "= " + fmtBpm(c.bpm) + (hasRamp(c) ? " → " + fmtBpm(c.rampTo) + (c.rampTo < c.bpm ? " rit." : " accel.") : "") + (c.open ? "  · " + (c.vt === "safety" ? "safety" : "vamp") + ", till GO" : c.safety ? "  · " + (c.vt === "vamp" ? "vamp" : "safety") + " ×" + c.passes : c.part === "out" ? "  · out" : c.passes > 1 ? "  · ×" + c.passes : "");
         g.fillText(tt, cx, 12.5); g.restore();
       }
     }
@@ -1550,18 +1544,18 @@ function renderArr(){
         <div class="tags">${e.cue && i > 0 ? `<span class="badge click">GO</span>` : ""}<span class="badge click">click only</span></div></div>`;
     }
     const s = secById(e.sec); if (!s) return "";
-    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = !e.skip && (e.open || e.repeat > 1);
+    const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = !e.skip && (e.open || e.safety || e.repeat > 1);
     const tags = [];
     const ln = ((e.loopTo | 0) || nb) - ((e.loopFrom | 0) || 1) + 1, lr = ` · ${ln} bar${ln > 1 ? "s" : ""}`;
     if (e.skip) tags.push(`<span class="badge dim">skipped</span>`);
-    else if (e.open) tags.push(`<span class="badge">vamp${lr}</span>`);
-    else if (e.safety && e.repeat > 1) tags.push(`<span class="badge safety">safety ×${e.repeat}${lr}</span>`);
+    else if (e.open) tags.push(`<span class="badge${vtOf(e) === "safety" ? " safety" : ""}">${vtName(e)}${lr} · till GO</span>`);
+    else if (e.safety) tags.push(`<span class="badge${vtOf(e) === "safety" ? " safety" : ""}">${vtName(e)}${lr} · ×${e.repeat} set</span>`);
     else if (e.repeat > 1) tags.push(`<span class="badge dim">×${e.repeat}</span>`);
     if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
     if (e.cue && i > 0) tags.unshift(`<span class="badge click" title="Stops and waits for GO before this">GO</span>`);
     const fit = r.fit && r.fit[i];
     if (fit && fit.cut > 0.01) tags.push(`<span class="badge" style="background:rgba(255,107,94,.16);color:var(--danger)" title="Not enough room in the recording before ${esc(fit.next || "the next section")}">doesn't fit</span>`);
-    return `<div class="row${sel}${e.skip ? " skipped" : ""}" data-i="${i}">${grip}<span class="mark${e.safety && !e.skip ? " safety" : isV ? " vamp" : ""}">${esc(s.label)}</span>
+    return `<div class="row${sel}${e.skip ? " skipped" : ""}" data-i="${i}">${grip}<span class="mark${vtOf(e) === "safety" && !e.skip ? " safety" : isV ? " vamp" : ""}">${esc(s.label)}</span>
       <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${tempoHTML(s)}</div></div>
       <div class="tags">${tags.join("")}</div></div>`;
   }).join("") || `<div class="empty">Nothing in the running order yet. Add a section above.</div>`;
@@ -1593,7 +1587,7 @@ function renderShowInsp(span){
     <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">Show entry</span></div>
     <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${tempoHTML(s)}</p>
       ${(() => {
-        const mode = e.skip ? "skip" : e.open ? "vamp" : e.safety ? "safety" : e.repeat > 1 ? "repeat" : "once";
+        const mode = e.skip ? "skip" : (e.open || e.safety) ? vtName(e) : e.repeat > 1 ? "repeat" : "once";
         const nb = s.bars - (e.skipStart || 0) - (e.skipEnd || 0), lf = clamp((e.loopFrom | 0) || 1, 1, nb), lt = Math.max(lf, clamp((e.loopTo | 0) || nb, 1, nb)), len = lt - lf + 1;
         const pick = `<div class="f"><span class="seg" role="group" aria-label="How it plays">${[["once", "Once"], ["repeat", "Repeat"], ["vamp", "Vamp"], ["safety", "Safety"], ["skip", "Skip"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}">${t}</button>`).join("")}</span></div>`;
         const lenRow = `<div class="f"><span>Length</span><input type="number" data-f="loopLen" value="${len}" min="1" max="${nb}" style="width:4em" aria-label="Length in bars"> bars${nb > 1 ? ` <small>from bar</small> <input type="number" data-f="loopFrom" value="${lf}" min="1" max="${nb}" style="width:3.6em" aria-label="Starts at bar">` : ""}</div>`;
@@ -1601,8 +1595,14 @@ function renderShowInsp(span){
         if (mode === "once") say = "Plays through one time.";
         if (mode === "repeat"){ rows = `<label class="f"><span>Times</span><input type="number" data-f="repeat" value="${e.repeat}" min="2" max="99"></label>`; say = `Plays ${e.repeat} times through.`; }
         const what = len === nb ? "the section" : len === 1 ? "this bar" : `these ${len} bars`;
-        if (mode === "vamp"){ rows = lenRow; say = `Loops ${what} until GO.`; }
-        if (mode === "safety"){ rows = lenRow + `<label class="f"><span>Up to</span><input type="number" data-f="repeat" value="${e.repeat}" min="2" max="99"> times</label>`; say = `Plays ${what} ${e.repeat} times. GO moves on early.`; }
+        if (mode === "vamp" || mode === "safety"){
+          const n = e.repeat, w = mode === "safety" ? "safety" : "vamp";
+          const ends = `<div class="f"><span>Ends</span><span class="seg" role="group" aria-label="How it ends"><button type="button" data-a="ends" data-m="go" aria-pressed="${!!e.open}" title="Loops until the MD says go">On the MD's GO</button><button type="button" data-a="ends" data-m="count" aria-pressed="${!e.open}" title="Plays the same number of times every night">After ${n} time${n > 1 ? "s" : ""}</button></span></div>`;
+          rows = lenRow + `<label class="f"><span>Times</span><input type="number" data-f="repeat" value="${n}" min="1" max="99"> <small>${e.open ? "as rehearsed" : "every night"}</small></label>` + ends;
+          say = e.open
+            ? `Loops ${what} until GO. The track is laid out for ${n} time${n > 1 ? "s" : ""}, like the rehearsal track. In QLab it loops until its ${w === "safety" ? "End safety" : "Leave vamp"} GO, and leaves at the end of the pass it's on.`
+            : `Plays ${what} ${n} time${n > 1 ? "s" : ""} every night, then carries on by itself. In QLab it's built into the audio, with nothing to press. Playing here, GO still moves on early.`;
+        }
         if (mode === "skip") say = "Not played. Pick another option to bring it back.";
         if ((mode === "vamp" || mode === "safety") && len < nb) say += " The rest of the section plays once.";
         let room = "";
@@ -1622,11 +1622,17 @@ function showClick(ev){
   if (a && a.dataset.a === "grip") return;
   if (!a){ if (row.closest("#ents") && S.arr[i] && S.arr[i].id !== selEnt){ selEnt = S.arr[i].id; renderAll(); } return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
+  if (a.dataset.a === "ends"){ const en = S.arr[i]; mut(() => { en.vt = vtOf(en) || "vamp"; en.open = a.dataset.m === "go"; en.safety = !en.open; }); return; }
   if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => {
     en.skip = m === "skip"; if (m === "skip") return;
-    en.open = m === "vamp"; en.safety = m === "safety";
-    if (m === "once" || m === "vamp") en.repeat = 1;
-    if ((m === "repeat" || m === "safety") && en.repeat < 2) en.repeat = 2;
+    if (m === "vamp" || m === "safety"){
+      // a vamp starts out waiting for the MD's GO, a safety starts out set to play the same every night
+      if (vtOf(en) !== m || !(en.open || en.safety)){ en.open = m === "vamp"; en.safety = m === "safety"; if (m === "safety" && en.repeat < 2) en.repeat = 3; }
+      en.vt = m; if (!en.repeat || en.repeat < 1) en.repeat = 1;
+      return; }
+    en.open = false; en.safety = false; delete en.vt;
+    if (m === "once") en.repeat = 1;
+    if (m === "repeat" && en.repeat < 2) en.repeat = 2;
   }); return; }
   mut(() => {
     const arr = S.arr;
@@ -1662,7 +1668,7 @@ function showChange(ev){
       if (lf > lt){ if (f === "loopFrom") en.loopTo = lf; else en.loopFrom = lt; }
       if (((en.loopFrom | 0) || 1) === 1 && ((en.loopTo | 0) || nb) === nb){ delete en.loopFrom; delete en.loopTo; }
     }
-    else if (f === "repeat"){ en.repeat = clamp(Math.round(+v || 1), 1, 99); if (en.safety && en.repeat < 2) en.repeat = 2; }
+    else if (f === "repeat"){ en.repeat = clamp(Math.round(+v || 1), 1, 99); }
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
     else if (f === "bars") en.bars = clamp(Math.round(+v || 1), 1, 999);
     else if (["sig","groups","unit","clickOn","bpm"].includes(f)){ if (!editMeter(en, f, v)) return; }
@@ -2329,7 +2335,7 @@ function runSheet(r){
   const lines = [`${track.name} — running order`, `Count-in: ${S.set.countIn} bar(s)`, ""];
   for (const c of r){
     if (c.kind !== "sec" && c.kind !== "click") continue;
-    lines.push(`${fmtT2(c.t).padStart(8)}  m.${String(c.bar).padStart(4)}–${c.bar + c.bars - 1}  [${c.label}] ${c.name || ""}  ${sigTxt(c)}  ${tempoTxt(c)}${c.passes > 1 ? `  pass ${c.pass + 1}/${c.passes}` : ""}${c.open && c.pass === 0 ? "  (till ready live)" : ""}${c.safety && c.pass === 0 ? "  (safety: GO skips the rest)" : ""}${c.kind === "click" ? "  (click only)" : ""}`);
+    lines.push(`${fmtT2(c.t).padStart(8)}  m.${String(c.bar).padStart(4)}–${c.bar + c.bars - 1}  [${c.label}] ${c.name || ""}  ${sigTxt(c)}  ${tempoTxt(c)}${c.passes > 1 ? `  pass ${c.pass + 1}/${c.passes}` : ""}${c.open && c.pass === 0 ? "  (loops till GO live)" : ""}${c.safety && c.pass === 0 ? "  (set: plays " + c.passes + " times)" : ""}${c.kind === "click" ? "  (click only)" : ""}`);
   }
   lines.push("", `Total ${fmtT2(r.total)}`);
   return lines.join("\n");
@@ -2344,7 +2350,7 @@ const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? trac
 // One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
 // marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
 function qlabPlan(){
-  const r = build("show", true).filter(c => !((c.open || c.safety) && c.pass > 0));
+  const r = build("show", true).filter(c => !(c.open && c.pass > 0));   // set-count repeats stay in the audio as written
   const segs = []; let cur = [];
   for (const c of r){ if (c.goStart && cur.length){ segs.push(cur); cur = []; } cur.push(c); }
   if (cur.length) segs.push(cur);
@@ -2363,8 +2369,8 @@ function qlabPlan(){
     list[list.length - 1].contNext = false;
     const marks = [], vamps = []; let last = 1;
     for (const c of list){
-      if (!c.open && !c.safety) continue;
-      const a = c.t, b = c.t + c.dur, cnt = c.open ? -1 : c.passes;
+      if (!c.open) continue;
+      const a = c.t, b = c.t + c.dur, cnt = -1;   // loops until its GO
       if (a >= 0.05 && !marks.some(m => Math.abs(m.time - a) < 0.001)) marks.push({time:a, count:1});
       if (b <= t - 0.05) marks.push({time:b, count:cnt}); else last = cnt;
       vamps.push(c);
@@ -2378,15 +2384,15 @@ function qlabPlan(){
       notes: (si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
     let sk = 0;
     for (const v of vamps){
-      if (v.safety){
-        const nm = `Skip safety ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
-        cues.push({type:"safety", num:`S${aNum}.${++sk}`, target:aNum, name:nm, passes:v.passes,
-          what:`${nm} (${bars}, plays ${v.passes} times). Only if the MD calls it: click during a pass and it moves on after that pass. Not in the GO list.`,
-          notes:`Safety ${bars} plays ${v.passes} times on its own. If it's not needed, click this during a pass on the MD's call: it finishes that pass and carries on. Leave it alone and the safety plays out.`});
+      if (v.vt === "safety"){
+        const nm = `End safety ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
+        cues.push({type:"devamp", safety:true, num:num(), target:aNum, name:nm, passes:v.passes,
+          what:`${nm} (${bars}, rehearsed ${v.passes} time${v.passes > 1 ? "s" : ""}). Loops until this GO, on the MD's cue. It finishes the pass, then carries on.`,
+          notes:`Safety ${bars} loops until this GO (rehearsal track plays it ${v.passes} time${v.passes > 1 ? "s" : ""}). Press on the MD's cue: during the first pass to skip it. It finishes the pass it's on, then the song carries on in time.`});
         continue;
       }
       const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = v.bars > 1 ? `m.${v.bar}-${v.bar + v.bars - 1}` : `m.${v.bar}`;
-      cues.push({type:"devamp", num:num(), target:aNum, name:nm, what:`${nm} (${bars}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
+      cues.push({type:"devamp", num:num(), target:aNum, name:nm, passes:v.passes, what:`${nm} (${bars}${v.passes > 1 ? `, rehearsed ${v.passes} times` : ""}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
         notes:`Vamp ${bars} loops until this GO. Press it while the vamp is looping, on the MD's cue. It finishes the current pass, then the song carries on.`});
     }
   });
@@ -2428,14 +2434,12 @@ function qlabScript(cues, song){
       if (c.marks.length || c.last !== 1){
         L.push(`	if not (my setSlices(${v}, {${c.marks.map(m => `{${t(m.time)}, ${m.count}}`).join(", ")}}, ${c.last})) then set end of problems to "Cue ${asq(c.num)}: set the vamp slices by hand (see Cue sheet.txt)."`);
       }
-    } else if (c.type === "safety"){
-      L.push(`	if not (my addSafety(audioCue, "${asq(c.num)}", "${asq(c.name)}", "${asq(c.notes)}", mainList)) then set end of problems to "${asq(c.name)} went in the main list (couldn't make the Safeties cart). If the safety isn't used, move the playhead past it."`);
     } else {
       L.push(`	my addDevamp(audioCue, "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}")`);
     }
   });
   L.push(
-`	set msg to "Added ${cues.length} cue${cues.length > 1 ? "s" : ""} for ${asq(song)}. Press GO on cue ${asq(cues[0].num)} to start.${cues.some(c => c.type === "safety") ? " Safety skips are buttons in the Safeties cart." : ""}"`,
+`	set msg to "Added ${cues.length} cue${cues.length > 1 ? "s" : ""} for ${asq(song)}. Press GO on cue ${asq(cues[0].num)} to start."`,
 `	if (count of problems) > 0 then`,
 `		set AppleScript's text item delimiters to return`,
 `		set msg to msg & return & return & (problems as text)`,
@@ -2519,50 +2523,6 @@ function qlabScript(cues, song){
 `	return false`,
 `end setSlices`,
 ``,
-`-- Safety skips live in a cue cart called "Safeties", so they never sit in the GO list.`,
-`on safetyCart()`,
-`	tell application id "com.figure53.QLab.5" to tell front workspace`,
-`		try`,
-`			return first cue list whose q name is "Safeties"`,
-`		end try`,
-`		try`,
-`			make type "cue cart"`,
-`			set theCart to last cue list`,
-`			set q name of theCart to "Safeties"`,
-`			return theCart`,
-`		on error`,
-`			return missing value`,
-`		end try`,
-`	end tell`,
-`end safetyCart`,
-``,
-`on addSafety(targetCue, num, nm, nt, mainList)`,
-`	set theCart to my safetyCart()`,
-`	if theCart is not missing value then`,
-`		tell application id "com.figure53.QLab.5" to tell front workspace`,
-`			try`,
-`				set current cue list to theCart`,
-`				make type "Devamp"`,
-`				set theSkip to last item of (selected as list)`,
-`				set cue target of theSkip to targetCue`,
-`				set q name of theSkip to nm`,
-`				set notes of theSkip to nt`,
-`				try`,
-`					set q number of theSkip to num`,
-`				end try`,
-`				set current cue list to mainList`,
-`				return true`,
-`			on error`,
-`				try`,
-`					set current cue list to mainList`,
-`				end try`,
-`			end try`,
-`		end tell`,
-`	end if`,
-`	my addDevamp(targetCue, num, "SAFETY (skip past if not used) - " & nm, nt)`,
-`	return false`,
-`end addSafety`,
-``,
 `on addDevamp(targetCue, num, nm, nt)`,
 `	tell application id "com.figure53.QLab.5" to tell front workspace`,
 `		make type "Devamp"`,
@@ -2583,15 +2543,11 @@ function cueSheet(cues, song){
       : [`Outputs 1 and 2 = click, in both ears -> band and MD in-ears. Never send it to FOH.`, `Click only: the track was just a reference and is not in these files.`]), ``,
     `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
   let go = 0;
-  cues.filter(c => c.type !== "safety").forEach(c => out.push(`${String(++go).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
-  const saf = cues.filter(c => c.type === "safety");
-  if (saf.length){
-    out.push(``, `SAFETIES - buttons in the "Safeties" cart, NOT in the GO list:`);
-    saf.forEach(c => out.push(`     ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
-    out.push(`Leave them alone and each safety plays out by itself; the GO list carries on as normal.`);
-  }
-  out.push(``, `Vamps loop in QLab until their "Leave vamp" cue is pressed. Press it only while that vamp is`,
-    `playing; pressed too early it does nothing and the vamp will keep going round.`, ``,
+  cues.forEach(c => out.push(`${String(++go).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
+  out.push(``, `Vamps and safeties set to "On the MD's GO" loop in QLab until their "Leave vamp" / "End safety"`,
+    `cue is pressed. Press it only while that loop is playing; pressed too early it does nothing and it`,
+    `keeps going round. It always finishes the pass it's on, so the song stays in time.`,
+    `Ones set to "After N times" are built into the audio exactly as set: nothing to press.`, ``,
     `Slice points (only needed if the import script couldn't set them):`);
   const sl = cues.filter(c => c.type === "audio" && (c.marks.length || c.last !== 1));
   if (!sl.length) out.push(`  none - no vamps.`);
@@ -2609,7 +2565,7 @@ function renderQlabPreview(){
   if (!track || !S.arr.length){ el.innerHTML = ""; return; }
   let cues; try { cues = qlabPlan(); } catch(e){ el.innerHTML = ""; return; }
   let go = 0;
-  el.innerHTML = cues.map(c => `<div class="qrow${c.type !== "audio" ? " dv" : ""}"><span class="qgo num">${c.type === "safety" ? "Cart" : "GO " + (++go)}</span><span class="qn num">${esc(c.num)}</span><span class="qw">${c.type !== "audio" ? "" : `<b>${esc(c.name)}</b> `}${esc(c.what)}</span></div>`).join("");
+  el.innerHTML = cues.map(c => `<div class="qrow${c.type !== "audio" ? " dv" : ""}"><span class="qgo num">GO ${++go}</span><span class="qn num">${esc(c.num)}</span><span class="qw">${c.type !== "audio" ? "" : `<b>${esc(c.name)}</b> `}${esc(c.what)}</span></div>`).join("");
 }
 $("#qlabBtn").onclick = async () => {
   if (!track || !S.arr.length) return toast("Nothing to export yet.");
@@ -2679,6 +2635,3 @@ async function boot(){
 boot().then(() => renderTaps());
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawLane);
 </script>
-
-</body>
-</html>
