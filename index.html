@@ -177,6 +177,16 @@ select{border:1px solid var(--line);background:var(--paper);border-radius:5px;pa
 
 /* step 3 */
 .out{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.out .qlab{grid-column:1 / -1}
+.qlist{display:flex;flex-direction:column;margin:0 14px 4px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.qlist:empty{display:none}
+.qrow{display:grid;grid-template-columns:4.2em 4.5em minmax(0,1fr);gap:10px;align-items:baseline;padding:8px 12px;border-bottom:1px solid var(--line);font-size:13.5px}
+.qrow:last-child{border-bottom:0}
+.qrow .qgo{font-weight:700;color:var(--amber)}
+.qrow .qn{color:var(--muted)}
+.qrow.dv{background:var(--vamp-soft)}
+.qrow.dv .qw{color:var(--vamp)}
+.steps-mini{margin:0;padding:4px 14px 16px 34px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:3px}
 @media (max-width:860px){.out{grid-template-columns:minmax(0,1fr)}}
 .card > h2{font:700 19px/1.2 var(--f-mark);margin:0;padding:14px 14px 4px}
 .card > .sub{margin:0;padding:0 14px 10px;color:var(--muted);font-size:12.5px}
@@ -201,7 +211,7 @@ body.locked .pane .card{opacity:.75}
 
 <div class="wrap">
   <header>
-    <div class="brand"><h1>Pit Click</h1><span class="ver num">v17</span><span class="trk" id="trkName">Demo track</span></div>
+    <div class="brand"><h1>Pit Click</h1><span class="ver num">v18</span><span class="trk" id="trkName">Demo track</span></div>
     <label class="btn primary file">Load track…<input type="file" id="fileIn" accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
     <button class="btn" id="demoBtn">Demo</button>
     <button class="btn" id="undoBtn" title="Undo (Ctrl/⌘+Z)">Undo</button>
@@ -282,6 +292,22 @@ body.locked .pane .card{opacity:.75}
   </section>
 
   <section class="out" id="paneOut" role="tabpanel" aria-labelledby="tabOut" hidden>
+    <div class="card qlab">
+      <h2>QLab</h2>
+      <p class="sub">One zip with everything QLab needs: the audio for each cue (click on output 1, track on output 2), the vamps already set to loop, and a script that builds the cues in QLab 5. Whoever runs the show just presses GO.</p>
+      <div class="mix">
+        <label><span class="lbl">Song name</span><input type="text" id="qlName" placeholder="Song name"></label>
+        <label><span class="lbl">First cue number</span><input type="text" id="qlNum" value="1" style="width:6em" class="num"></label>
+      </div>
+      <div class="qlist" id="qlPreview" aria-label="What each GO does"></div>
+      <div class="bar"><button class="btn primary" id="qlabBtn">Export for QLab</button></div>
+      <ol class="steps-mini">
+        <li>Unzip into your show folder and keep the files together.</li>
+        <li>Open QLab 5 and your workspace, and click the cue these should go after.</li>
+        <li>Open <b>Import into QLab.applescript</b> and press Run. Allow it to control QLab the first time.</li>
+        <li>Patch output 1 to the in-ear mix and output 2 to FOH.</li>
+      </ol>
+    </div>
     <div class="card">
       <h2>Click &amp; mix</h2>
       <div class="mix">
@@ -473,7 +499,7 @@ let selSec = null;
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true};
+const DEFAULT_SET = {countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1"};
 function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
 function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
@@ -602,16 +628,16 @@ function build(v){
         if (nb <= 0) return;
         const reps = Math.max(1, e.repeat | 0);
         for (let p = 0; p < reps; p++){
-          push({kind:"sec", sid:s.id, ent:ei, pass:p, passes:reps, open:!!e.open, dur:tm.barT[z] - tm.barT[a], src:s.start + tm.barT[a], ...meterOf(s), tm, barOff:a, bar, bars:nb, click:!s.mute, clickFrom:0, label:s.label, name:s.name});
+          push({kind:"sec", sid:s.id, ent:ei, pass:p, passes:reps, open:!!e.open, goStart: p === 0 && !!e.cue && k > 0, dur:tm.barT[z] - tm.barT[a], src:s.start + tm.barT[a], ...meterOf(s), tm, barOff:a, bar, bars:nb, click:!s.mute, clickFrom:0, label:s.label, name:s.name});
           bar += nb;
         }
         // a hold / fermata between this section and the next one in the recording plays as free time
         const nx = ents[k + 1], si = secs.indexOf(s);
-        if (nx && nx.kind === "sec" && secs[si + 1] && nx.sec === secs[si + 1].id && !e.skipEnd && !nx.skipStart && !e.open && secs[si + 1].start > s.end + 1e-4)
+        if (nx && nx.kind === "sec" && !nx.cue && secs[si + 1] && nx.sec === secs[si + 1].id && !e.skipEnd && !nx.skipStart && !e.open && secs[si + 1].start > s.end + 1e-4)
           push({kind:"gap", ent:ei, dur:secs[si + 1].start - s.end, src:s.end, click:false, name:"Hold · free time"});
       } else {
         const tm = timeMap(e, e.bars);
-        push({kind:"click", ent:ei, pass:0, passes:1, dur:tm.dur, src:null, ...meterOf(e), tm, barOff:0, bar, bars:e.bars, click:true, clickFrom:0, label:e.label || "+", name:e.name || "Click bars"});
+        push({kind:"click", ent:ei, pass:0, passes:1, goStart: !!e.cue && k > 0, dur:tm.dur, src:null, ...meterOf(e), tm, barOff:0, bar, bars:e.bars, click:true, clickFrom:0, label:e.label || "+", name:e.name || "Click bars"});
         bar += e.bars;
       }
       lastEnt = e;
@@ -640,7 +666,7 @@ function liveChunks(){
   const live = r.filter(c => !(c.open && c.pass > 0)).map(c => Object.assign({}, c, {rt:c.t}));
   for (let i = 0; i < live.length; i++){
     const a = live[i-1], c = live[i];
-    c.contPrev = !!(a && a.src != null && c.src != null && !a.open && Math.abs(a.src + a.dur - c.src) < 1e-4);
+    c.contPrev = !!(a && a.src != null && c.src != null && !a.open && !c.goStart && Math.abs(a.src + a.dur - c.src) < 1e-4);
     if (a) a.contNext = c.contPrev;
   }
   return live;
@@ -747,7 +773,7 @@ function play(){
   if (idx < 0){ idx = 0; within = 0; }
   // each playback gets its own output gates; stop() disconnects them so nothing can keep sounding
   const tOut = c.createGain(), cOut = c.createGain(); tOut.connect(trackBus); cOut.connect(clickBus);
-  P = {live, idx, within:Math.max(0, within), when:c.currentTime + 0.08, nodes:new Set(), sched:[], go:false, passNo:0, endAt:null, tOut, cOut};
+  P = {live, idx, within:Math.max(0, within), when:c.currentTime + 0.08, nodes:new Set(), sched:[], go:false, passNo:0, endAt:null, tOut, cOut, released:live[idx], waiting:null};
   pump(); pumpTimer = setInterval(pump, 25);
   $("#playBtn").textContent = "❚❚"; $("#playBtn").setAttribute("aria-label","Pause");
   loop();
@@ -758,6 +784,8 @@ function pump(){
   while (P.when < c.currentTime + 0.3){
     const ch = P.live[P.idx];
     if (!ch){ if (P.endAt == null) P.endAt = P.when; break; }
+    // a "Wait for GO" point: stop feeding audio until GO is pressed
+    if (ch.goStart && P.released !== ch){ P.waiting = ch; break; }
     // a vamp decides whether to go round again at the moment the next pass would start,
     // so GO pressed at any point during a pass leaves at the end of that same pass
     if (ch.open && P.passNo > 0 && P.go){ P.go = false; P.idx++; P.passNo = 0; continue; }
@@ -813,6 +841,7 @@ function livePos(){
   for (const s of P.sched) if (s.at <= now) cur = s;
   if (!cur) return {rt: P.sched[0] ? P.sched[0].ch.rt + 0 : playhead, ch: P.sched[0] && P.sched[0].ch, within:0, pass:0};
   const within = Math.min(now - cur.at, cur.ch.dur);
+  if (cur.ch.inserted) return {rt:cur.ch.rt, ch:cur.ch, within, pass:0};
   const rt = cur.ch.open ? cur.ch.rt + Math.min(cur.pass, cur.ch.passes - 1) * cur.ch.dur + within : cur.ch.rt + within;
   return {rt, ch:cur.ch, within, pass:cur.pass};
 }
@@ -825,6 +854,16 @@ function loop(){
 }
 function goPress(){
   if (!P){ return; }
+  if (P.waiting){
+    // carry on from a Wait-for-GO point: count-in in the click, then the next part
+    const ch = P.waiting; P.waiting = null; P.released = ch;
+    P.when = Math.max(actx.currentTime + 0.06, P.when);
+    if (S.set.countIn > 0){
+      const ci = steady(ch), tm = timeMap(ci, S.set.countIn);
+      P.live.splice(P.idx, 0, {...ci, kind:"lead", inserted:true, tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:"", rt:ch.rt, contPrev:false, contNext:false});
+    }
+    pump(); updateReadout(livePos()); return;
+  }
   P.go = true;
   // GO in the last moments of a pass: the next pass may already be queued. Pull it back out.
   const now = actx.currentTime;
@@ -863,12 +902,13 @@ function updateReadout(lp){
       const passTxt = c.open ? (lp ? ` <span class="badge">pass ${lp.pass + 1}</span>` : ` <span class="badge">till ready</span>`) : (c.passes > 1 ? ` <span class="badge">${c.pass + 1}/${c.passes}</span>` : "");
       secHTML = `<span class="mark${c.kind==="click"?" click":""}${c.open||c.passes>1?" vamp":""}">${esc(c.label)}</span>${esc(c.name || "")}${passTxt}`;
     } else { secHTML = esc(c.name || (c.kind === "tail" ? "Tail" : c.kind === "pre" ? "Before bar 1" : "—")); if (c.kind === "gap") barTxt = "hold"; }
-    if (lp && c.open) status = P && P.go ? "GO — leaving after this pass" : "Vamp — waiting for GO";
+    if (P && P.waiting) status = `Stopped. GO starts ${P.waiting.label ? P.waiting.label + " " : ""}${P.waiting.name || ""} with a count-in`;
+    else if (lp && c.open) status = P && P.go ? "GO — leaving after this pass" : "Vamp — waiting for GO";
     else if (P && P.go) status = "GO armed for next vamp";
   }
   $("#roBar").textContent = barTxt; $("#roSec").innerHTML = secHTML; $("#roBpm").innerHTML = bpmTxt;
   $("#roTime").textContent = fmtT(playhead); $("#roStatus").textContent = status;
-  const g = $("#goBtn"); g.classList.toggle("wait", !!(lp && c && c.open && !(P && P.go))); g.classList.toggle("armed", !!(P && P.go));
+  const g = $("#goBtn"); g.classList.toggle("wait", !!(P && P.waiting) || !!(lp && c && c.open && !(P && P.go))); g.classList.toggle("armed", !!(P && P.go));
   $("#ph").style.left = (playhead * pps) + "px";
 }
 let lastNowEnt = undefined;
@@ -965,6 +1005,7 @@ function drawLane(){
     if (!vis(c)) return;
     const x0 = Math.round(c.t * pps) + 0.5, isV = c.open || c.passes > 1;
     g.fillStyle = isV ? C.vamp : C.ink; g.fillRect(x0 - 1, 0, 2, H);
+    if (c.goStart){ g.fillStyle = C.amber; g.fillRect(x0 - 4, 0, 3, H); g.font = "700 10px " + css("--f-num"); g.fillText("GO", x0 - 22, H - 12); }
     const x = Math.max(x0, sl), w = (c.t + c.dur) * pps - x;
     if (c.pass > 0){
       if (w > 30){ g.font = "600 11px " + css("--f-num"); g.fillStyle = C.vamp; g.fillText("×" + (c.pass + 1), x + 5, 12); }
@@ -1364,13 +1405,14 @@ function renderArr(){
     if (e.kind === "click"){
       return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark click">${esc(e.label || "+")}</span>
         <div style="min-width:0"><div class="nm">${esc(e.name || "Click bars")}</div><div class="meta">${sp} · ${e.bars} bars · ${esc(sigTxt(e))} · ${tempoHTML(e)}</div></div>
-        <div class="tags"><span class="badge click">click only</span></div></div>`;
+        <div class="tags">${e.cue && i > 0 ? `<span class="badge click">GO</span>` : ""}<span class="badge click">click only</span></div></div>`;
     }
     const s = secById(e.sec); if (!s) return "";
     const nb = s.bars - (e.skipStart||0) - (e.skipEnd||0), isV = e.open || e.repeat > 1;
     const tags = [];
     if (e.open) tags.push(`<span class="badge">till GO</span>`); else if (e.repeat > 1) tags.push(`<span class="badge">×${e.repeat}</span>`);
     if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
+    if (e.cue && i > 0) tags.unshift(`<span class="badge click" title="Stops and waits for GO before this">GO</span>`);
     return `<div class="row${sel}" data-i="${i}">${grip}<span class="mark${isV ? " vamp" : ""}">${esc(s.label)}</span>
       <div style="min-width:0"><div class="nm${s.name ? "" : " muted"}">${esc(s.name || "Section " + s.label)}</div><div class="meta">${sp} · ${nb === s.bars ? nb + " bars" : nb + " of " + s.bars + " bars"} · ${tempoHTML(s)}</div></div>
       <div class="tags">${tags.join("")}</div></div>`;
@@ -1383,7 +1425,10 @@ function renderShowInsp(span){
   const el = $("#showInsp"), i = S.arr.findIndex(e => e.id === selEnt), e = S.arr[i];
   if (!e){ el.innerHTML = `<div class="insp-empty">Pick a row on the left to edit it.</div>`; return; }
   const sp = span[i] ? `mm. ${span[i].a}–${span[i].b}` : "not playing";
-  const edit = `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from show</button></div></div>`;
+  const cueG = i === 0 ? "" : `<div class="group"><h3>Cue</h3>
+      <label class="f"><span>Wait for GO</span><input type="checkbox" data-f="cue" ${e.cue ? "checked" : ""}> <small>stop before this; GO starts it with a count-in</small></label>
+      <p class="note">Use this where the MD takes over: a held fermata, a dialogue break, a free verse. It becomes its own QLab cue.</p></div>`;
+  const edit = cueG + `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from show</button></div></div>`;
   if (e.kind === "click"){
     const mc = meterCells(e);
     el.innerHTML = `<div data-i="${i}">
@@ -1423,6 +1468,7 @@ function showChange(ev){
   const en = S.arr[+row.dataset.i]; const v = ev.target.value;
   mut(() => {
     if (f === "open") en.open = ev.target.checked;
+    else if (f === "cue") en.cue = ev.target.checked;
     else if (f === "label" || f === "name") en[f] = v;
     else if (f === "repeat") en.repeat = clamp(Math.round(+v || 1), 1, 99);
     else if (f === "skipStart" || f === "skipEnd"){ const s = secById(en.sec); en[f] = clamp(Math.round(+v || 0), 0, s ? s.bars - 1 : 0); if (s && en.skipStart + en.skipEnd >= s.bars){ en[f] = Math.max(0, s.bars - 1 - (f === "skipStart" ? en.skipEnd : en.skipStart)); toast("At least one bar has to play."); } }
@@ -1456,6 +1502,9 @@ function renderSettings(){
   const s = S.set;
   $("#autoLabel").checked = s.autoLabel !== false;
   $("#anchorChk").checked = s.anchor !== false;
+  $("#qlName").value = s.qlName || ""; $("#qlName").placeholder = track && !track.demo ? track.name : "Song name";
+  $("#qlNum").value = s.qlNum || "1";
+  renderQlabPreview();
   $("#setCount").value = s.countIn; $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
@@ -1877,8 +1926,9 @@ function downloads(){
   })();
   return dlP;
 }
-function renderShow(){
-  const r = build("show"); const sr = track.sr; const n = Math.ceil(r.total * sr) + 1;
+function renderShow(){ const r = build("show"); return {r, ...renderChunks(r)}; }
+function renderChunks(r){
+  const sr = track.sr; const n = Math.ceil(r.total * sr) + 1;
   const L = new Float32Array(n), Rr = new Float32Array(n), K = new Float32Array(n);
   const c0 = track.ch[0], c1 = track.ch[1] || track.ch[0];
   const F = Math.round(0.004 * sr);
@@ -1898,7 +1948,7 @@ function renderShow(){
       for (const [t, k] of beatsOf(c)){ const o = Math.round((c.t + t) * sr), b = cb[k]; for (let j = 0; j < b.length && o + j < n; j++) K[o + j] += b[j]; }
     }
   }
-  return {r, sr, L, R:Rr, K};
+  return {sr, L, R:Rr, K};
 }
 function wav24(chs, sr){
   const n = chs[0].length, nc = chs.length, ba = nc * 3, buf = new ArrayBuffer(44 + n * ba), dv = new DataView(buf), u8 = new Uint8Array(buf);
@@ -2009,6 +2059,233 @@ function runSheet(r){
   lines.push("", `Total ${fmtT2(r.total)}`);
   return lines.join("\n");
 }
+/* ---------------- QLab ---------------- */
+const ascii = v => String(v ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2013\u2014]/g, "-").replace(/[^\x20-\x7E]/g, "").replace(/\s+/g, " ").trim();
+const fileSafe = v => ascii(v).replace(/[\\/:*?"<>|]+/g, "-").trim() || "Song";
+const asq = v => ascii(v).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+const qlSong = () => (S.set.qlName || "").trim() || (track && !track.demo ? track.name : "Demo song");
+// One audio cue per part of the song (split at Wait-for-GO points), vamps rendered once and
+// marked as looping slices, plus one Devamp cue per vamp. The operator just presses GO down the list.
+function qlabPlan(){
+  const r = build("show").filter(c => !(c.open && c.pass > 0));
+  const segs = []; let cur = [];
+  for (const c of r){ if (c.goStart && cur.length){ segs.push(cur); cur = []; } cur.push(c); }
+  if (cur.length) segs.push(cur);
+  const song = qlSong(), base = ascii(S.set.qlNum || "1") || "1";
+  let n = 0; const num = () => (n++ === 0 ? base : base + "." + (n - 1));
+  const cues = [];
+  segs.forEach((seg, si) => {
+    const list = seg.map(c => ({...c}));
+    const first = list.find(c => c.kind === "sec" || c.kind === "click");
+    if (si > 0 && S.set.countIn > 0 && first){
+      const ci = steady(first), tm = timeMap(ci, S.set.countIn);
+      list.unshift({...ci, kind:"lead", tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:""});
+    }
+    let t = 0; list.forEach(c => { c.t = t; t += c.dur; }); list.total = t;
+    list.forEach((c, i) => { const a = list[i - 1]; c.contPrev = !!(a && a.src != null && c.src != null && Math.abs(a.src + a.dur - c.src) < 1e-4); if (a) a.contNext = c.contPrev; });
+    list[list.length - 1].contNext = false;
+    const marks = [], vamps = []; let last = 1;
+    for (const c of list){
+      if (!c.open) continue;
+      const a = c.t, b = c.t + c.dur;
+      if (a >= 0.05 && !marks.some(m => Math.abs(m.time - a) < 0.001)) marks.push({time:a, count:1});
+      if (b <= t - 0.05) marks.push({time:b, count:-1}); else last = -1;
+      vamps.push(c);
+    }
+    marks.sort((x, y) => x.time - y.time);
+    const part = segs.length > 1 ? ` (part ${si + 1})` : "";
+    const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? list[0].bars : 0;
+    const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
+    cues.push({type:"audio", num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
+      what: si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
+      notes: (si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". Click is on output 1 (in-ears), track on output 2 (FOH)."});
+    for (const v of vamps){
+      const nm = `Leave vamp ${v.label} ${v.name || ""}`.trim(), bars = `m.${v.bar}-${v.bar + v.bars - 1}`;
+      cues.push({type:"devamp", num:num(), target:aNum, name:nm, what:`${nm} (${bars}). Press while it's looping, on the MD's cue. It finishes the pass, then carries on.`,
+        notes:`Vamp ${bars} loops until this GO. Press it while the vamp is looping, on the MD's cue. It finishes the current pass, then the song carries on.`});
+    }
+  });
+  return cues;
+}
+function qlabScript(cues, song){
+  const audio = cues.filter(c => c.type === "audio");
+  const t = x => (Math.round(x * 1000) / 1000).toFixed(3);
+  const L = [
+`-- Pit Click -> QLab 5 cue builder for "${asq(song)}"`,
+`--`,
+`-- 1. Keep this script in the same folder as the .wav files (QLab plays them from there).`,
+`-- 2. Open QLab 5 and your show workspace. Click the cue these should go after.`,
+`-- 3. Press Run (the play button) in Script Editor. The first time, macOS asks to let`,
+`--    Script Editor control QLab: click Allow (or OK).`,
+`--`,
+`-- Output 1 = click (band and MD in-ears). Output 2 = track (FOH).`,
+``,
+`property audioFiles : {${audio.map(c => `"${asq(c.file)}"`).join(", ")}}`,
+``,
+`on run`,
+`	set baseFolder to my findFolder()`,
+`	if baseFolder is missing value then return`,
+`	tell application id "com.figure53.QLab.5"`,
+`		activate`,
+`		if (count of workspaces) is 0 then`,
+`			display dialog "Open your QLab workspace first, then run this again." buttons {"OK"} default button 1`,
+`			return`,
+`		end if`,
+`	end tell`,
+`	set problems to {}`];
+  cues.forEach((c, i) => {
+    if (c.type === "audio"){
+      const v = "cue" + (i + 1);
+      L.push(`	-- ${asq(c.num)}: ${asq(c.name)}`);
+      L.push(`	set ${v} to my addAudio(baseFolder & "/${asq(c.file)}", "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}")`);
+      L.push(`	set audioCue to ${v}`);
+      if (c.marks.length || c.last !== 1){
+        L.push(`	if not (my setSlices(${v}, {${c.marks.map(m => `{${t(m.time)}, ${m.count}}`).join(", ")}}, ${c.last})) then set end of problems to "Cue ${asq(c.num)}: set the vamp slices by hand (see Cue sheet.txt)."`);
+      }
+    } else {
+      L.push(`	my addDevamp(audioCue, "${asq(c.num)}", "${asq(c.num)} ${asq(c.name)}", "${asq(c.notes)}")`);
+    }
+  });
+  L.push(
+`	set msg to "Added ${cues.length} cue${cues.length > 1 ? "s" : ""} for ${asq(song)}. Press GO on cue ${asq(cues[0].num)} to start."`,
+`	if (count of problems) > 0 then`,
+`		set AppleScript's text item delimiters to return`,
+`		set msg to msg & return & return & (problems as text)`,
+`	end if`,
+`	display dialog msg buttons {"OK"} default button 1`,
+`end run`,
+``,
+`on findFolder()`,
+`	set f to missing value`,
+`	try`,
+`		set mePath to POSIX path of (path to me)`,
+`		set f to do shell script "dirname " & quoted form of mePath`,
+`		do shell script "test -f " & quoted form of (f & "/" & (item 1 of audioFiles))`,
+`	on error`,
+`		set f to missing value`,
+`	end try`,
+`	if f is missing value then`,
+`		try`,
+`			set f to POSIX path of (choose folder with prompt "Choose the folder with the Pit Click files (the one containing " & (item 1 of audioFiles) & ")")`,
+`			if f ends with "/" then set f to text 1 thru -2 of f`,
+`		on error`,
+`			return missing value`,
+`		end try`,
+`	end if`,
+`	repeat with a in audioFiles`,
+`		try`,
+`			do shell script "test -f " & quoted form of (f & "/" & a)`,
+`		on error`,
+`			display dialog "Can't find " & a & " in that folder. Keep all the files from the zip together." buttons {"OK"} default button 1`,
+`			return missing value`,
+`		end try`,
+`	end repeat`,
+`	return f`,
+`end findFolder`,
+``,
+`on addAudio(p, num, nm, nt)`,
+`	set theFile to (POSIX file p) as alias`,
+`	tell application id "com.figure53.QLab.5" to tell front workspace`,
+`		make type "Audio"`,
+`		set theCue to last item of (selected as list)`,
+`		set file target of theCue to theFile`,
+`		try`,
+`			set q number of theCue to num`,
+`		end try`,
+`		set q name of theCue to nm`,
+`		set notes of theCue to nt`,
+`		-- file channel 1 (click) to output 1 only, channel 2 (track) to output 2 only`,
+`		try`,
+`			setLevel theCue row 1 column 1 db 0`,
+`			setLevel theCue row 1 column 2 db -120`,
+`			setLevel theCue row 2 column 1 db -120`,
+`			setLevel theCue row 2 column 2 db 0`,
+`		end try`,
+`	end tell`,
+`	return theCue`,
+`end addAudio`,
+``,
+`on setSlices(theCue, marks, lastCount)`,
+`	tell application id "com.figure53.QLab.5"`,
+`		repeat with loopValue in {-1, 9999}`,
+`			try`,
+`				set recs to {}`,
+`				repeat with m in marks`,
+`					set c to item 2 of m`,
+`					if c < 0 then set c to (contents of loopValue)`,
+`					set end of recs to {time:(item 1 of m), playCount:c}`,
+`				end repeat`,
+`				set slice markers of theCue to recs`,
+`				set lc to lastCount`,
+`				if lc < 0 then set lc to (contents of loopValue)`,
+`				set last slice play count of theCue to lc`,
+`				return true`,
+`			end try`,
+`		end repeat`,
+`	end tell`,
+`	return false`,
+`end setSlices`,
+``,
+`on addDevamp(targetCue, num, nm, nt)`,
+`	tell application id "com.figure53.QLab.5" to tell front workspace`,
+`		make type "Devamp"`,
+`		set theDevamp to last item of (selected as list)`,
+`		set cue target of theDevamp to targetCue`,
+`		try`,
+`			set q number of theDevamp to num`,
+`		end try`,
+`		set q name of theDevamp to nm`,
+`		set notes of theDevamp to nt`,
+`	end tell`,
+`end addDevamp`, ``);
+  return L.join("\n");
+}
+function cueSheet(cues, song){
+  const out = [`${ascii(song)} - QLab cue sheet (made with Pit Click)`, ``,
+    `Output 1 = click -> band and MD in-ears. Never send it to FOH.`,
+    `Output 2 = track -> FOH.`, ``,
+    `GO   Cue      What happens`, `---  -------  ------------------------------------------------------------`];
+  cues.forEach((c, i) => out.push(`${String(i + 1).padStart(3)}  ${ascii(c.num).padEnd(7)}  ${ascii(c.what)}`));
+  out.push(``, `Vamps loop in QLab until their "Leave vamp" cue is pressed. Press it only while that vamp is`,
+    `playing; pressed too early it does nothing and the vamp will keep going round.`, ``,
+    `Slice points (only needed if the import script couldn't set them):`);
+  const sl = cues.filter(c => c.type === "audio" && (c.marks.length || c.last !== 1));
+  if (!sl.length) out.push(`  none - no vamps.`);
+  for (const c of sl){
+    out.push(`  Cue ${ascii(c.num)} (${ascii(c.file)}, ${fmtT2(c.dur)} long):`);
+    c.marks.forEach(m => out.push(`    marker at ${fmtT2(m.time)} (${m.time.toFixed(3)} s): slice before it plays ${m.count < 0 ? "forever (type a letter in QLab's play count)" : m.count}`));
+    if (c.last !== 1) out.push(`    last slice plays forever`);
+  }
+  out.push(``, `To import: unzip into your show folder, open QLab 5 and the workspace, click the cue these`,
+    `should go after, then open "Import into QLab.applescript" and press Run.`);
+  return out.join("\n");
+}
+function renderQlabPreview(){
+  const el = $("#qlPreview"); if (!el || tab !== "out" || !S) return;
+  if (!track || !S.arr.length){ el.innerHTML = ""; return; }
+  let cues; try { cues = qlabPlan(); } catch(e){ el.innerHTML = ""; return; }
+  el.innerHTML = cues.map((c, i) => `<div class="qrow${c.type === "devamp" ? " dv" : ""}"><span class="qgo num">GO ${i + 1}</span><span class="qn num">${esc(c.num)}</span><span class="qw">${c.type === "devamp" ? "" : `<b>${esc(c.name)}</b> `}${esc(c.what)}</span></div>`).join("");
+}
+$("#qlabBtn").onclick = async () => {
+  if (!track || !S.arr.length) return toast("Nothing to export yet.");
+  stopIfPlaying();
+  await busy("Building QLab cues…");
+  try {
+    const cues = qlabPlan(), song = qlSong(), files = [], enc = new TextEncoder();
+    for (const c of cues){
+      if (c.type !== "audio") continue;
+      const {sr, L, R, K} = renderChunks(c.list);
+      const M = new Float32Array(L.length); for (let i = 0; i < M.length; i++) M[i] = (L[i] + R[i]) * 0.5;
+      files.push({name:c.file, data:wav24([K, M], sr)});
+    }
+    files.push({name:"Import into QLab.applescript", data:enc.encode(qlabScript(cues, song))});
+    files.push({name:"Cue sheet.txt", data:enc.encode(cueSheet(cues, song))});
+    const blob = zip(files); busy("");
+    await save(`${fileSafe(song)} - QLab.zip`, blob);
+  } catch(err){ busy(""); toast("Export failed: " + err.message); }
+};
+$("#qlName").addEventListener("change", e => { mut(() => S.set.qlName = e.target.value, {free:true}); });
+$("#qlNum").addEventListener("change", e => { mut(() => S.set.qlNum = ascii(e.target.value) || "1", {free:true}); });
 $("#saveProj").onclick = () => {
   const data = JSON.stringify({app:"pit-click", version:1, track:track ? track.name : "", duration:track ? track.dur : 0, ...JSON.parse(snapshot())}, null, 2);
   save(`${(track && track.name) || "show"} click map.json`, data);
