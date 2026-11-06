@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v44</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v45</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -1410,7 +1410,7 @@ function renderMapInsp(){
     <div class="group"><h3>Edit</h3>
       <div class="btns"><button class="btn sm" data-a="insA">+ Bar before</button><button class="btn sm" data-a="insB">+ Bar after</button>
         <button class="btn sm" data-a="merge" ${i === S.sections.length - 1 ? "disabled" : ""}>Merge with next</button>
-        <button class="btn sm danger" data-a="del">Delete</button></div></div>
+        <button class="btn sm danger" data-a="del" title="Deletes this section from the tempo map: its bars, audio and click. To lose only the click, set Click to Off.">Delete section</button></div></div>
   </div>`;
 }
 function mapClick(e){
@@ -1764,7 +1764,7 @@ function renderShowInsp(span){
   const cueG = i === 0 ? "" : `<div class="group"><h3>Cue</h3>
       <label class="f"><span>Wait for GO</span><input type="checkbox" data-f="cue" ${e.cue ? "checked" : ""}> <small>stop before this; GO starts it with a count-in</small></label>
       <p class="note">Use this where the MD takes over: a held fermata, a dialogue break, a free verse. It becomes its own QLab cue.</p></div>`;
-  const edit = cueG + `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from song</button></div></div>`;
+  const edit = cueG + `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del" title="Takes this part out of the song: its audio and its click. Undo or Reset order brings it back.">Remove this part</button></div></div>`;
   if (e.kind === "click"){
     const mc = meterCells(e);
     el.innerHTML = `<div data-i="${i}">
@@ -1779,11 +1779,12 @@ function renderShowInsp(span){
   const s = secById(e.sec);
   el.innerHTML = `<div data-i="${i}">
     <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">In the song</span></div>
+    <div class="group"><h3>Click</h3><div class="f"><span class="seg" role="group" aria-label="Click in this part"><button type="button" data-a="clk" data-v="on" aria-pressed="${!s.mute}">On</button><button type="button" data-a="clk" data-v="off" aria-pressed="${!!s.mute}">Off</button></span> <small>${s.mute ? "No click here. The track still plays." : "Click plays in this part."}</small></div></div>
     <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${tempoHTML(s)}</p>
       ${(() => {
         const mode = e.skip ? "skip" : (e.open || e.safety) ? vtName(e) : e.repeat > 1 ? "repeat" : "once";
         const nb = s.bars - (e.skipStart || 0) - (e.skipEnd || 0), lf = clamp((e.loopFrom | 0) || 1, 1, nb), lt = Math.max(lf, clamp((e.loopTo | 0) || nb, 1, nb)), len = lt - lf + 1;
-        const pick = `<div class="f"><span class="seg" role="group" aria-label="How it plays">${[["once", "Once"], ["repeat", "Repeat"], ["vamp", "Vamp"], ["safety", "Safety"], ["skip", "Skip"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}">${t}</button>`).join("")}</span></div>`;
+        const pick = `<div class="f"><span class="seg" role="group" aria-label="How it plays">${[["once", "Once"], ["repeat", "Repeat"], ["vamp", "Vamp"], ["safety", "Safety"], ["skip", "Skip"]].map(([m, t]) => `<button type="button" data-a="mode" data-m="${m}" aria-pressed="${mode === m}"${m === "skip" ? ` title="Leaves this part out of the song: its audio and its click. To keep the audio and lose only the click, set Click to Off."` : ""}>${t}</button>`).join("")}</span></div>`;
         const lenRow = `<div class="f"><span>Length</span><input type="number" data-f="loopLen" value="${len}" min="1" max="${nb}" style="width:4em" aria-label="Length in bars"> bars${nb > 1 ? ` <small>from bar</small> <input type="number" data-f="loopFrom" value="${lf}" min="1" max="${nb}" style="width:3.6em" aria-label="Starts at bar">` : ""}</div>`;
         let rows = "", say = "";
         if (mode === "once") say = "Plays through one time.";
@@ -1817,6 +1818,7 @@ function showClick(ev){
   if (!a){ if (row.closest("#ents") && S.arr[i]) pickRows(ev, S.arr.map(x => x.id), S.arr[i].id, multiEnt, () => selEnt, v => selEnt = v); return; }
   if (a.dataset.a === "unit"){ const en = S.arr[i]; mut(() => editMeter(en, "unit", a.dataset.u)); return; }
   if (a.dataset.a === "feel"){ const en = S.arr[i]; mut(() => editMeter(en, "clickOn", a.dataset.v)); return; }
+  if (a.dataset.a === "clk"){ const sc = S.arr[i] && secById(S.arr[i].sec); if (sc) mut(() => { sc.mute = a.dataset.v === "off"; }); return; }
   if (a.dataset.a === "ends"){ const en = S.arr[i]; mut(() => { en.vt = vtOf(en) || "vamp"; en.open = a.dataset.m === "go"; en.safety = !en.open; }); return; }
   if (a.dataset.a === "mode"){ const en = S.arr[i], m = a.dataset.m; mut(() => {
     en.skip = m === "skip"; if (m === "skip") return;
@@ -1829,6 +1831,9 @@ function showClick(ev){
     if (m === "once") en.repeat = 1;
     if (m === "repeat" && en.repeat < 2) en.repeat = 2;
   }); return; }
+  if (a.dataset.a === "del" && S.arr[i] && S.arr[i].kind === "sec" && !S.arr.some((x, k) => k !== i && x.kind === "sec" && !x.skip)){
+    toast("That's the whole song, so it stays. To get rid of the click only, set Click to Off."); return; }
+  if (a.dataset.a === "del" && S.arr[i] && S.arr[i].kind === "sec") toast("Removed that part (audio and click). Undo or Reset order brings it back. For just the click, use Click: Off.");
   mut(() => {
     const arr = S.arr;
     if (a.dataset.a === "dup"){ const c = {...arr[i], id:uid()}; arr.splice(i + 1, 0, c); selEnt = c.id; }
@@ -2912,7 +2917,12 @@ async function openAudio(ab, fileName){
   hist.length = 0; taps = []; renderTaps(); playhead = 0;
   const saved = loadLocal();
   S = {offset:0, sections:[], arr:[], set:{...DEFAULT_SET}};
-  if (saved){ Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; normAll(); selSec = S.sections[0] && S.sections[0].id; return true; }
+  if (saved){
+    Object.assign(S, saved); S.set = {...DEFAULT_SET, ...saved.set}; normAll(); selSec = S.sections[0] && S.sections[0].id;
+    // everything had been taken out of the running order: bring the song back rather than show nothing
+    if (S.sections.length && !S.arr.some(e => !e.skip && (e.kind === "click" || secById(e.sec)))) S.arr = defaultArr();
+    if (S.sections.length) return true;
+  }
   setViewSilent("map"); renderAll(); busy("Finding the tempo…"); await detectAll(); hist.length = 0; return false;
 }
 async function addSongs(list){
