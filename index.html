@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v42</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v43</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -684,7 +684,7 @@ function build(v, forExport, forceKeep){
     }
   } else {
     const ents = S.arr.filter(e => !e.skip && (e.kind === "click" || secById(e.sec)));
-    // pickup audio (before bar 1) plays over the end of the count-in and any intro click bars
+    // the count-in and any intro click bars are click only: the song starts exactly when the playhead reaches bar 1
     if (ents.length){
       const e0 = ents[0]; const i0 = e0.kind === "sec" ? secById(e0.sec) : e0;
       const ai = ents.findIndex(e => e.kind === "sec"); eA = ai >= 0 ? ents[ai] : null;
@@ -692,7 +692,7 @@ function build(v, forExport, forceKeep){
       const P = pre;
       const before = ents.slice(0, Math.max(0, ai)).reduce((a, e) => a + timeMap(e, e.bars).dur, 0);
       const C = S.set.countIn * barDur(i0);
-      const L = Math.max(P - before, C);
+      const L = C;
       const ci = steady(i0);
       if (L > 0) push({kind:"lead", dur:L, src:null, ...ci, tm: C > 0 ? timeMap(ci, S.set.countIn) : null, barOff:0, bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
     }
@@ -728,10 +728,7 @@ function build(v, forExport, forceKeep){
     if (track && lastEnt && lastEnt.kind === "sec" && last && lastEnt.sec === last.id && !lastEnt.skipEnd && track.dur > last.end)
       push({kind:"tail", dur:track.dur - last.end, src:last.end, click:false, name:"Tail"});
   }
-  if (v !== "map" && pre > 0){
-    const A = ch.find(c => c.kind === "sec" && c.ent === S.arr.indexOf(eA) && c.pass === 0);
-    if (A) for (const c of ch){ if (c === A) break; if (c.kind === "lead" || c.kind === "click"){ const s0 = secs[0].start - (A.t - c.t); if (s0 + c.dur > 0) c.src = s0; } }
-  }
+
   // "Track straight through": the original recording runs on underneath while the click follows the
   // running order, so extra vamp / safety passes don't stretch the song. Exports always use the edit.
   // "Song length: stays as recorded": every section keeps its place in the recording, the track runs
@@ -778,7 +775,8 @@ function build(v, forExport, forceKeep){
         const nxt = out.find(c => c.t > f.start + 1e-6 && c.kind === "sec" && !(c.pass > 0) && c.ent != k);
         f.room = Math.max(0, (nxt ? nxt.t : (track.dur + shift)) - f.start - own); f.next = nxt ? nxt.label : null;
       }
-      let t2 = 0; for (const c of out){ c.t = t2; c.src = c.t - shift; t2 += c.dur; }
+      // nothing before bar 1 plays the recording: the count-in and intro click stay click only
+      let t2 = 0, reached = false; for (const c of out){ if (c === first) reached = true; c.t = t2; c.src = reached ? c.t - shift : null; t2 += c.dur; }
       ch.length = 0; out.forEach(c => ch.push(c)); t = t2;
       const endT = track.dur + shift; if (t < endT - 0.01) push({kind:"tail", dur:endT - t, src:t - shift, click:false, name:"Tail"});
     }
