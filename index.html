@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v46</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v47</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -576,7 +576,7 @@ const multiSec = new Set(), multiEnt = new Set();   // extra rows picked with Sh
 let taps = [];
 const hist = [];
 
-const DEFAULT_SET = {straight:false, countIn:2, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1", qlTrack:"none"};
+const DEFAULT_SET = {straight:false, countIn:2, ciClicks:0, sound:"beep", sub:1, accent:true, clickVol:0.8, trackVol:0.8, split:false, autoLabel:true, anchor:true, qlName:"", qlNum:"1", qlTrack:"none"};
 function letterFor(i){ let L = ""; i++; while (i > 0){ const r = (i - 1) % 26; L = String.fromCharCode(65 + r) + L; i = Math.floor((i - 1) / 26); } return L; }
 function relabel(){ if (S.set.autoLabel === false) return; S.sections.forEach((s, i) => s.label = letterFor(i)); }
 
@@ -585,7 +585,7 @@ let locked = false; try { locked = localStorage.getItem("pitclick:locked") === "
 function applyLock(){
   document.body.classList.toggle("locked", locked);
   const b = $("#lockBtn"); b.setAttribute("aria-pressed", locked); b.textContent = locked ? "Unlock" : "Lock";
-  const sel = "#mapTools input, #mapTools button, #mapTools select, #showTools input, #showTools button, #showTools select, #mapInsp input, #mapInsp button, #mapInsp select, #showInsp input, #showInsp button, #showInsp select, [data-ci], [data-ci-other], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
+  const sel = "#mapTools input, #mapTools button, #mapTools select, #showTools input, #showTools button, #showTools select, #mapInsp input, #mapInsp button, #mapInsp select, #showInsp input, #showInsp button, #showInsp select, [data-ci-sel], [data-ci-other], [data-ci-clicks], #setSound, #setSub, #setAccent, #undoBtn, #fileIn, #demoBtn, #projIn";
   document.querySelectorAll(sel).forEach(el => { if (locked) el.disabled = true; else if (el.dataset.lk !== "1") el.disabled = false; });
   $("#keepLen").disabled = false;
   document.querySelectorAll("label.file").forEach(l => l.classList.toggle("disabled", locked));
@@ -691,10 +691,7 @@ function build(v, forExport, forceKeep){
       pre = (eA && secs[0] && eA.sec === secs[0].id && !eA.skipStart) ? Math.max(0, secs[0].start) : 0;
       const P = pre;
       const before = ents.slice(0, Math.max(0, ai)).reduce((a, e) => a + timeMap(e, e.bars).dur, 0);
-      const C = S.set.countIn * barDur(i0);
-      const L = C;
-      const ci = steady(i0);
-      if (L > 0) push({kind:"lead", dur:L, src:null, ...ci, tm: C > 0 ? timeMap(ci, S.set.countIn) : null, barOff:0, bar:1 - S.set.countIn, bars:S.set.countIn, click:C > 0, clickFrom:L - C, label:"", name: C > 0 ? "Count-in" : "Pickup"});
+      const lc = ciChunk(i0); if (lc) push(lc);
     }
     const introBars = (() => { let n = 0; for (const e of ents){ if (e.kind === "sec") break; n += e.bars; } return n; })();
     let bar = 1 - introBars; let lastEnt = null;
@@ -1024,10 +1021,8 @@ function goPress(){
     // carry on from a Wait-for-GO point: count-in in the click, then the next part
     const ch = P.waiting; P.waiting = null; P.released = ch;
     P.when = Math.max(actx.currentTime + 0.06, P.when);
-    if (S.set.countIn > 0){
-      const ci = steady(ch), tm = timeMap(ci, S.set.countIn);
-      P.live.splice(P.idx, 0, {...ci, kind:"lead", inserted:true, tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:"", rt:ch.rt, contPrev:false, contNext:false});
-    }
+    const lc = ciChunk(ch, {inserted:true, rt:ch.rt, contPrev:false, contNext:false});
+    if (lc) P.live.splice(P.idx, 0, lc);
     pump(); updateReadout(livePos()); return;
   }
   const now = actx.currentTime, lp0 = livePos();
@@ -1916,22 +1911,24 @@ function renderSettings(){
   $("#qlPatch").textContent = qlMix() ? "Patch outputs 1 and 2 (left and right) to the mix that needs track and click." : qlFOH() ? "Patch output 1 to the in-ear mix and output 2 to FOH." : "Patch outputs 1 and 2 (left and right) to the in-ear mix.";
   renderQlabPreview();
   document.querySelectorAll("[data-ci-host]").forEach(h => {
-    const lbl = h.querySelector(".cil"); const n = s.countIn | 0;
-    h.innerHTML = (lbl ? lbl.outerHTML : "") + `<span class="seg" role="group" aria-label="Count-in">${[[0, "None"], [1, "1 bar"], [2, "2 bars"]].map(([v, t]) => `<button type="button" data-ci="${v}" aria-pressed="${n === v}">${t}</button>`).join("")}</span>` +
-      (h.hasAttribute("data-ci-compact") ? (n > 2 ? `<span class="badge dim">${n} bars</span>` : "") : `<input type="number" data-ci-other min="0" max="16" step="1" value="${n > 2 ? n : ""}" placeholder="other" aria-label="Other count-in, in bars" title="Any other number of bars">`);
+    const lbl = h.querySelector(".cil"), n = s.countIn | 0, c = s.ciClicks | 0;
+    const cur = c > 0 ? "c" + c : "b" + n;
+    const opts = [["b0", "None"], ["b1", "1 bar"], ["b2", "2 bars"], ...[1, 2, 3, 4, 6, 8].map(k => ["c" + k, k + (k > 1 ? " clicks" : " click")])];
+    if (!opts.some(o => o[0] === cur)) opts.push([cur, c > 0 ? c + " clicks" : n + " bars"]);
+    h.innerHTML = (lbl ? lbl.outerHTML : "") + `<select data-ci-sel aria-label="Count-in" title="Count-in: whole bars, or just a number of clicks">${opts.map(([v, t]) => `<option value="${v}" ${v === cur ? "selected" : ""}>${t}</option>`).join("")}</select>` +
+      (h.hasAttribute("data-ci-compact") ? "" : ` <input type="number" data-ci-other min="0" max="16" step="1" value="" placeholder="bars" aria-label="Other count-in, in bars" title="Any other number of bars"> <input type="number" data-ci-clicks min="0" max="32" step="1" value="" placeholder="clicks" aria-label="Other count-in, in clicks" title="Any other number of clicks">`);
   });
   $("#setSound").value = s.sound; $("#setSub").value = s.sub;
   $("#setAccent").checked = s.accent; $("#setClickVol").value = s.clickVol; $("#setTrackVol").value = s.trackVol; $("#setSplit").checked = s.split;
 }
-document.addEventListener("click", e => {
-  const b = e.target.closest("[data-ci]"); if (!b || b.disabled) return;
-  const v = +b.dataset.ci; if ((S.set.countIn | 0) === v) return;
-  mut(() => S.set.countIn = v); toast(v ? `${v}-bar count-in` : "No count-in");
-});
 document.addEventListener("change", e => {
-  if (!e.target.matches("[data-ci-other]")) return;
-  const v = clamp(Math.round(+e.target.value || 0), 0, 16);
-  mut(() => S.set.countIn = v);
+  if (e.target.matches("[data-ci-sel]")){
+    const v = e.target.value, k = +v.slice(1);
+    mut(() => { if (v[0] === "c"){ S.set.ciClicks = k; } else { S.set.ciClicks = 0; S.set.countIn = k; } });
+    toast(ciOn() ? `${ciTxt()} count-in` : "No count-in"); return;
+  }
+  if (e.target.matches("[data-ci-other]")){ const v = clamp(Math.round(+e.target.value || 0), 0, 16); mut(() => { S.set.ciClicks = 0; S.set.countIn = v; }); return; }
+  if (e.target.matches("[data-ci-clicks]")){ const v = clamp(Math.round(+e.target.value || 0), 0, 32); mut(() => { S.set.ciClicks = v; if (!v) S.set.countIn = 0; }); return; }
 });
 $("#keepLen").addEventListener("change", e => { stopIfPlaying(); S.set.straight = e.target.checked; saveLocal(); renderAll(); });
 $("#autoLabel").onchange = e => mut(() => S.set.autoLabel = e.target.checked);
@@ -2549,7 +2546,7 @@ function mixCentre(L, R, K){
   return [ML, MR];
 }
 function runSheet(r){
-  const lines = [`${track.name} — running order`, `Count-in: ${S.set.countIn} bar(s)`, ""];
+  const lines = [`${track.name} — running order`, `Count-in: ${ciOn() ? ciTxt().replace("-", " ") + "s" : "none"}`, ""];
   for (const c of r){
     if (c.kind !== "sec" && c.kind !== "click") continue;
     lines.push(`${fmtT2(c.t).padStart(8)}  m.${String(c.bar).padStart(4)}–${c.bar + c.bars - 1}  [${c.label}] ${c.name || ""}  ${sigTxt(c)}  ${tempoTxt(c)}${c.passes > 1 ? `  pass ${c.pass + 1}/${c.passes}` : ""}${c.open && c.pass === 0 ? "  (loops till GO live)" : ""}${c.safety && c.pass === 0 ? "  (set: plays " + c.passes + " times)" : ""}${c.kind === "click" ? "  (click only)" : ""}`);
@@ -2600,10 +2597,7 @@ function qlabPlan(o = {}){
       if (li < list.length - 1){ list = list.slice(0, li + 1); list.push({kind:"tail", dur:1.5, src:null, click:false, name:"Ring-out"}); }
     }
     const first = list.find(music);
-    if (si > 0 && !jIn && S.set.countIn > 0 && first){   // a Wait-for-GO point: the same count-in you hear on GO here
-      const ci = steady(first), tm = timeMap(ci, S.set.countIn);
-      list.unshift({...ci, kind:"lead", tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:""});
-    }
+    if (si > 0 && !jIn && first){ const lc = ciChunk(first); if (lc) list.unshift(lc); }   // a Wait-for-GO point: the same count-in you hear on GO here
     let t = 0; list.forEach(c => { c.t = t; t += c.dur; }); list.total = t;
     list.forEach((c, i) => { const a = list[i - 1]; c.contPrev = !!(a && a.src != null && c.src != null && Math.abs(a.src + a.dur - c.src) < 1e-4); if (a) a.contNext = c.contPrev; });
     list[list.length - 1].contNext = false;
@@ -2617,11 +2611,11 @@ function qlabPlan(o = {}){
     }
     marks.sort((x, y) => x.time - y.time);
     const part = segs.length > 1 ? ` (part ${si + 1})` : "";
-    const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? list[0].bars : 0;
+    const aNum = num(), lead = list[0].kind === "lead" && list[0].click ? (list[0].ciTxt || list[0].bars + "-bar") : "";
     const from = first ? `m.${first.bar}${first.label ? " [" + first.label + "]" : ""}` : "";
     cues.push({type:"audio", joinPrev:jIn, joinNext:jOut, song, num:aNum, name:song + part, file:`${aNum} - ${fileSafe(song + part)}.wav`, list, marks, last, dur:t,
-      what: trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead}-bar count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead}-bar count-in, then ${from}` : `, plays from ${from}`}.`,
-      notes: (trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead}-bar count-in in the click first` : "") + ". " + qlRouting()});
+      what: trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}. GO on the MD's cue${lead ? `: ${lead} count-in, then ${from}` : `, click starts at ${from}`}.` : si === 0 ? `Starts the song${lead ? `: ${lead} count-in in the click, then ${from}` : ""}.` : `Stopped point. GO on the MD's cue${lead ? `: ${lead} count-in, then ${from}` : `, plays from ${from}`}.`,
+      notes: (trimmed && (si > 0 || (first && first.bar > 1)) ? `Click in at ${from}: GO on the MD's cue` : si === 0 ? "GO starts the song" : "Stopped point: GO on the MD's cue") + (lead ? `. ${lead} count-in in the click first` : "") + ". " + qlRouting()});
     let sk = 0;
     for (const v of vamps){
       if (v.vt === "safety"){
@@ -2911,6 +2905,26 @@ async function openProject(file){
   } catch(e){ toast("That isn't a Pit Click project file."); }
 }
 $("#projIn").addEventListener("change", e => { if (e.target.files[0]) openProject(e.target.files[0]); e.target.value = ""; });
+
+/* ---------------- count-in: whole bars, or a number of clicks (1, 2, 3, 4, 6, 8…) ---------------- */
+const ciOn = () => (S.set.ciClicks | 0) > 0 || (S.set.countIn | 0) > 0;
+const ciTxt = () => (S.set.ciClicks | 0) > 0 ? `${S.set.ciClicks}-click` : `${S.set.countIn}-bar`;
+// the count-in leading into `sec`: same tempo and feel as where it lands; in clicks mode it's just the last N clicks
+function ciOf(sec){
+  if (!ciOn() || !sec) return null;
+  const base = steady(sec), n = S.set.ciClicks | 0;
+  if (n > 0){
+    const bc = barClicks(base).filter(x => x[1] !== "sub"), p = pulse(base), k = bc.length ? bc[0][3] / p : 1;
+    let m;
+    if (k >= 1 - 1e-6 && Math.abs(k - Math.round(k)) < 1e-6){ const kk = Math.round(k); m = {...base, num:n * kk, groups:Array(n).fill(kk), clickOn: kk > 1 ? "groups" : "all"}; }
+    else m = {...base, num:n, den:base.den * 2, groups:Array(n).fill(1), clickOn:"all"};   // feel twice a beat
+    const tm = timeMap(m, 1);
+    return {meter:m, tm, bars:1, dur:tm.dur};
+  }
+  const tm = timeMap(base, S.set.countIn);
+  return {meter:base, tm, bars:S.set.countIn, dur:tm.dur};
+}
+const ciChunk = (sec, extra) => { const c = ciOf(sec); return c ? {...c.meter, kind:"lead", tm:c.tm, barOff:0, dur:c.dur, src:null, click:true, clickFrom:0, bar:1 - c.bars, bars:c.bars, ciTxt:ciTxt(), name:"Count-in", label:"", ...extra} : null; };
 
 /* ---------------- songs (the show's running order of tracks) ---------------- */
 // Each song keeps its own tempo map and running order (saved per track, as before) and its audio in IndexedDB.
