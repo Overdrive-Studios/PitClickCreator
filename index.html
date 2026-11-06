@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v40</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v41</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -745,7 +745,8 @@ function build(v, forExport, forceKeep){
   // straight through, and repeats (vamp / safety / ×N passes) fill the room before the next section
   // instead of pushing it later. Passes that don't fit are cut short and reported. Exports use the edit.
   ch.fit = {};
-  if (v !== "map" && !forExport && (S.set.straight || forceKeep) && track){
+  // exports use exactly the same timeline as playback: what you hear is what you get
+  if (v !== "map" && (S.set.straight || forceKeep) && track){
     const first = ch.find(c => c.kind === "sec" && c.src != null);
     if (first){
       const shift = first.t - first.src, items = ch.filter(c => c.kind !== "tail" && c.kind !== "gap");
@@ -2553,14 +2554,8 @@ function qlabPlan(o = {}){
   const segs = []; let cur = [];
   // Click only: when the click stops for a while (dialogue, free time, sections with no click) and then comes
   // back, the comeback is its own GO with a count-in. Waiting inside one cue would drift out of time with the stage.
-  const QUIET = 8; let quiet = 0, heard = false;
-  for (const c of r){
-    const clicks = (c.kind === "sec" || c.kind === "click") && c.click;
-    if (c.goStart && cur.length){ segs.push(cur); cur = []; heard = false; quiet = 0; }
-    else if (!qlHasTrack() && clicks && heard && quiet > QUIET && cur.length){ segs.push(cur); cur = []; c.clickIn = true; }
-    cur.push(c);
-    if (clicks){ heard = true; quiet = 0; } else if (c.kind !== "lead") quiet += c.dur;
-  }
+  // a new cue starts only at your own Wait-for-GO points: nothing is split or added that you didn't set
+  for (const c of r){ if (c.goStart && cur.length){ segs.push(cur); cur = []; } cur.push(c); }
   if (cur.length) segs.push(cur);
   const song = o.song || qlSong(), base = o.base || ascii(S.set.qlNum || "1") || "1";
   let n = 0; const num = () => (n++ === 0 ? base : base + "." + (n - 1));
@@ -2574,17 +2569,17 @@ function qlabPlan(o = {}){
     if (!qlHasTrack() && !jIn && !jOut){
       // click only: the cue starts where the click comes in (with the count-in), not at the top of the song,
       // and stops after the last click. Nothing in front of the click to drift out of time.
-      const fi = list.findIndex(c => music(c) && c.click);
+      let fi = list.findIndex(c => music(c) && c.click);
       if (fi < 0) return;                                   // no click in this part at all: no cue
-      // drop everything before the first click: the recording before bar 1, sections with no click, holds.
-      // A fresh count-in goes back on below, so GO always lands straight into it.
+      // drop only dead air before the first click (recording before bar 1, sections with no click, holds).
+      // Your count-in stays if it runs straight into the first click; no bars are ever added.
+      while (fi > 0 && list[fi - 1].kind === "lead" && list[fi - 1].click) fi--;
       if (fi > 0){ list = list.slice(fi); trimmed = true; }
-      if (list[0].clickIn) trimmed = true;
       let li = list.length - 1; while (li > 0 && !(music(list[li]) && list[li].click)) li--;
       if (li < list.length - 1){ list = list.slice(0, li + 1); list.push({kind:"tail", dur:1.5, src:null, click:false, name:"Ring-out"}); }
     }
     const first = list.find(music);
-    if ((si > 0 || trimmed) && !jIn && S.set.countIn > 0 && first){
+    if (si > 0 && !jIn && S.set.countIn > 0 && first){   // a Wait-for-GO point: the same count-in you hear on GO here
       const ci = steady(first), tm = timeMap(ci, S.set.countIn);
       list.unshift({...ci, kind:"lead", tm, barOff:0, dur:tm.dur, src:null, click:true, clickFrom:0, bar:1 - S.set.countIn, bars:S.set.countIn, name:"Count-in", label:""});
     }
