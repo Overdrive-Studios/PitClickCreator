@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v43</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v44</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -715,6 +715,12 @@ function build(v, forExport, forceKeep){
         if (lb < z) piece(lb, z, {part:"out"});
         // a hold / fermata between this section and the next one in the recording plays as free time
         const nx = ents[k + 1], si = secs.indexOf(s);
+        // the next section starts before this one's last bar is over (you dragged it in close): this one is
+        // cut off right there, so its last clicks sit as close to the next ones as they are in the recording
+        if (nx && nx.kind === "sec" && !nx.cue && secs[si + 1] && nx.sec === secs[si + 1].id && !e.skipEnd && !nx.skipStart && !e.open && secs[si + 1].start < s.end - 1e-4){
+          const lastC = ch[ch.length - 1];
+          if (lastC && lastC.ent === ei){ const ov = Math.min(s.end - secs[si + 1].start, lastC.dur - 0.01); if (ov > 0){ lastC.dur -= ov; lastC.cutEnd = ov; t -= ov; } }
+        }
         if (nx && nx.kind === "sec" && !nx.cue && secs[si + 1] && nx.sec === secs[si + 1].id && !e.skipEnd && !nx.skipStart && !e.open && secs[si + 1].start > s.end + 1e-4)
           push({kind:"gap", ent:ei, dur:secs[si + 1].start - s.end, src:s.end, click:false, name:"Hold · free time"});
       } else {
@@ -1739,6 +1745,8 @@ function renderArr(){
     else if (e.repeat > 1) tags.push(`<span class="badge dim">×${e.repeat}</span>`);
     if (e.skipStart || e.skipEnd) tags.push(`<span class="badge dim">cut ${(e.skipStart||0) + (e.skipEnd||0)}</span>`);
     if (e.cue && i > 0) tags.unshift(`<span class="badge click" title="Stops and waits for GO before this">GO</span>`);
+    const cut = r.find(c => c.ent === i && c.cutEnd > 0);
+    if (cut){ const nx = S.arr[i + 1] && secById(S.arr[i + 1].sec); tags.push(`<span class="badge dim" title="The next section starts ${cut.cutEnd.toFixed(2)} s before this one's last bar ends, so the clicks close up there">into ${esc(nx ? nx.label : "next")} early · −${cut.cutEnd.toFixed(2)} s</span>`); }
     const fit = r.fit && r.fit[i];
     if (fit && fit.cut > 0.01) tags.push(`<span class="badge" style="background:rgba(255,107,94,.16);color:var(--danger)" title="Not enough room in the recording before ${esc(fit.next || "the next section")}">doesn't fit</span>`);
     return `<div class="row${sel}${e.skip ? " skipped" : ""}" data-i="${i}">${grip}<span class="mark${vtOf(e) === "safety" && !e.skip ? " safety" : isV ? " vamp" : ""}">${esc(s.label)}</span>
