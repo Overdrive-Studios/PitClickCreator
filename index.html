@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v45</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v46</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -704,6 +704,14 @@ function build(v, forExport, forceKeep){
         const s = secById(e.sec); const tm = timeMap(s, s.bars);
         const a = e.skipStart || 0, z = s.bars - (e.skipEnd || 0), nb = z - a;
         if (nb <= 0) return;
+        // the recording before bar 1 is part of the song: it plays after the count-in / intro click, with no click,
+        // and the click comes in at bar 1. Drag bar 1 later and the click starts later; the song isn't shortened.
+        if (e === eA && s === secs[0] && !a && s.start > 0.01){
+          const pv = ch[ch.length - 1];
+          // a beat or less before bar 1 is a pickup note: it plays over the end of the count-in / intro click, which still land on bar 1
+          if (s.start <= barDur(s) / barClicks({...s, clickOn: isCompound(s.num, s.den) ? "groups" : "all"}).filter(x => x[1] !== "sub").length + 2e-3 && pv && (pv.kind === "lead" || pv.kind === "click") && pv.dur >= s.start - 1e-6) pv.src = s.start - pv.dur;
+          else push({kind:"pre", dur:s.start, src:0, click:false, name:"Before the click"});
+        }
         const reps = Math.max(1, e.repeat | 0);
         const piece = (b0, b1, extra) => { push({kind:"sec", sid:s.id, ent:ei, pass:0, passes:1, open:false, safety:false, goStart:false, dur:tm.barT[b1] - tm.barT[b0], src:s.start + tm.barT[b0], ...meterOf(s), tm, barOff:b0, bar, bars:b1 - b0, click:!s.mute, clickFrom:0, label:s.label, name:s.name, ...extra}); bar += b1 - b0; };
         // a vamp or safety can loop just some of the bars: the ones before play once on the way in, the ones after on the way out
@@ -743,7 +751,7 @@ function build(v, forExport, forceKeep){
   ch.fit = {};
   // exports use exactly the same timeline as playback: what you hear is what you get
   if (v !== "map" && (S.set.straight || forceKeep) && track){
-    const first = ch.find(c => c.kind === "sec" && c.src != null);
+    const first = ch.find(c => (c.kind === "sec" || c.kind === "pre") && c.src != null);
     if (first){
       const shift = first.t - first.src, items = ch.filter(c => c.kind !== "tail" && c.kind !== "gap");
       const out = []; let cur = 0, slack = 0;
@@ -782,7 +790,7 @@ function build(v, forExport, forceKeep){
         f.room = Math.max(0, (nxt ? nxt.t : (track.dur + shift)) - f.start - own); f.next = nxt ? nxt.label : null;
       }
       // nothing before bar 1 plays the recording: the count-in and intro click stay click only
-      let t2 = 0, reached = false; for (const c of out){ if (c === first) reached = true; c.t = t2; c.src = reached ? c.t - shift : null; t2 += c.dur; }
+      let t2 = 0, reached = false; for (const c of out){ if (c === first) reached = true; c.t = t2; c.src = reached || c.src != null ? c.t - shift : null; t2 += c.dur; }
       ch.length = 0; out.forEach(c => ch.push(c)); t = t2;
       const endT = track.dur + shift; if (t < endT - 0.01) push({kind:"tail", dur:endT - t, src:t - shift, click:false, name:"Tail"});
     }
