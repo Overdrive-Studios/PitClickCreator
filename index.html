@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v41</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v42</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -284,14 +284,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 
     <section class="arrange">
       <div class="card">
-        <div class="arrhead">
-          <span class="seg big" role="group" aria-label="View">
-            <button type="button" class="vbtn" data-tab="map" id="tabMap" aria-pressed="false">Original</button>
-            <button type="button" class="vbtn" data-tab="show" id="tabShow" aria-pressed="true">Show</button>
-          </span>
-          <span class="vdesc" id="viewDesc">The show as you'll play it: order, repeats, vamps, safeties, cuts and stops.</span>
-        </div>
-        <div class="tools" id="mapTools" hidden>
+        <div class="tools" id="mapTools">
           <button class="btn" id="detectAll">Auto-detect tempo</button>
           <button class="btn primary" id="lineUpAll" title="Snap every section's beats onto the hits in the audio">Line up all</button>
           <label class="inline" title="Also fine-tune each section's tempo while lining up"><input type="checkbox" id="fitTempo" checked> fit tempo</label>
@@ -307,7 +300,7 @@ input[type=checkbox]{accent-color:var(--amber)}
           </span>
           <span class="grow"></span>
           <label class="inline" title="When on, editing one section never moves the others"><input type="checkbox" id="anchorChk"> Keep others in place</label>
-          <label class="inline"><input type="checkbox" id="autoLabel"> Letters follow order</label>
+          <label class="inline" hidden><input type="checkbox" id="autoLabel"> Letters follow order</label>
         </div>
         <div class="tools" id="showTools">
           <select id="addSel" aria-label="Section to add"></select>
@@ -317,11 +310,11 @@ input[type=checkbox]{accent-color:var(--amber)}
           <span class="tsep"></span>
           <label class="inline"><input type="checkbox" id="keepLen"> Keep the song as long as the recording</label>
           <span class="grow"></span>
-          <button class="btn" id="resetArr" title="Rebuild the running order from the original's sections">Reset</button>
+          <button class="btn" id="resetArr" title="Put every section back in recording order, once each">Reset order</button>
         </div>
         <div class="lanehead">
-          <span class="lbl" id="laneLbl">Show</span>
-          <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · click a name strip to pick, drag it to move · pinch to zoom</span></span>
+          <span class="lbl" id="laneLbl">Song</span>
+          <span class="keys"><span><kbd>Space</kbd> play</span><span><kbd>G</kbd> go</span><span><kbd>T</kbd> tap</span><span><kbd>S</kbd> split</span><span>drag to scrub · drag a start line onto the hit to line up · click a name strip to pick, drag it to reorder (⌥ Option-drag slides it in the recording) · pinch to zoom</span></span>
           <label class="zoom"><span class="lbl">Zoom</span><input type="range" id="zoom" min="0" max="100" step="0.1" value="0" style="width:130px" aria-label="Zoom"></label>
         </div>
         <div class="lane" id="lane"><div class="laneinner" id="laneInner"><canvas id="cv"></canvas><div class="ph" id="ph"></div></div></div>
@@ -1205,9 +1198,14 @@ let drag = null, secDrag = null, blockDrag = null;
 function laneT(e){ const r = $("#laneInner").getBoundingClientRect(); return clamp((e.clientX - r.left) / pps, 0, tl().total); }
 // in the tempo map, grab a section's start line to slide it (and everything after it) to the audio
 function secEdgeAt(e){
-  if (view !== "map" || locked) return null;
+  if (locked) return null;
   const x = laneT(e) * pps;
-  for (const c of tl()) if (c.kind === "sec" && c.sid && Math.abs(c.t * pps - x) < 7) return c.sid;
+  for (const c of tl()){
+    if (c.kind !== "sec" || !c.sid || Math.abs(c.t * pps - x) >= 7) continue;
+    if (view === "map") return c.sid;
+    // the song timeline: only where the section's bar 1 starts (not a repeat pass or a cut-in point)
+    if (c.src != null && !(c.pass > 0) && c.part !== "out" && !(c.barOff > 0)) return c.sid;
+  }
   return null;
 }
 function startDrag(e){
@@ -1217,7 +1215,9 @@ function startDrag(e){
   const sid = yTop < 24 ? null : secEdgeAt(e);
   if (sid){
     stopIfPlaying(); hist.push(snapshot()); if (hist.length > 80) hist.shift();
-    secDrag = {sid, id:e.pointerId, old: startsById(), base: snapshot()}; selSec = sid;
+    computeSrc();
+    secDrag = {sid, id:e.pointerId, old: startsById(), base: snapshot(), t0:laneT(e), s0:secById(sid).start}; selSec = sid;
+    if (view === "show"){ const en = S.arr.find(x => x.kind === "sec" && x.sec === sid && !x.skip); if (en) selEnt = en.id; }
     $("#laneInner").setPointerCapture(e.pointerId); $("#laneInner").classList.add("dragging");
     return;
   }
@@ -1231,7 +1231,7 @@ function startDrag(e){
       if (e.shiftKey || e.metaKey || e.ctrlKey || selectMode){ pickRows(e, k.ids, id, k.set, k.get, k.put); return; }
       if (!(id === k.get() || k.set.has(id))){ k.set.clear(); k.put(id); renderAll(); }
       if (locked) return;
-      blockDrag = {pid:e.pointerId, id, x0:e.clientX, t0:t, moved:false, view};
+      blockDrag = {pid:e.pointerId, id, x0:e.clientX, t0:t, moved:false, view: e.altKey ? "map" : view};
       $("#laneInner").setPointerCapture(e.pointerId);
       return;
     }
@@ -1243,7 +1243,10 @@ function startDrag(e){
   playhead = laneT(e); updateReadout();
 }
 $("#laneInner").addEventListener("pointerdown", startDrag);
-function pickedSecIds(){ return S.sections.filter(x => x.id === selSec || multiSec.has(x.id)).map(x => x.id); }
+function pickedSecIds(){
+  if (view !== "map"){ const want = new Set(S.arr.filter(x => x.kind === "sec" && (x.id === selEnt || multiEnt.has(x.id))).map(x => x.sec)); return S.sections.filter(x => want.has(x.id)).map(x => x.id); }
+  return S.sections.filter(x => x.id === selSec || multiSec.has(x.id)).map(x => x.id);
+}
 // Show view: where the picked entries would land (a gap between entries) for a time on the lane
 function entSlotAt(t){
   const span = {}; for (const c of tl()) if (c.ent != null && c.kind !== "gap"){ const o = span[c.ent] || (span[c.ent] = {a:c.t, b:c.t + c.dur}); o.b = c.t + c.dur; }
@@ -1269,7 +1272,7 @@ function moveBlock(e){
     dt = clamp(dt, lo, hi);
     const pins = {}; b.ids.forEach(id => pins[id] = b.old[id] + dt);
     reanchor(b.old, pins); b.dt = dt;
-    $("#roStatus").textContent = `${b.ids.length > 1 ? b.ids.length + " sections" : secById(b.id).label} ${dt >= 0 ? "+" : "−"}${Math.abs(dt).toFixed(3)} s`;
+    $("#roStatus").textContent = `${b.ids.length > 1 ? b.ids.length + " sections" : (secById(b.ids[0]) || {}).label || ""} ${dt >= 0 ? "+" : "−"}${Math.abs(dt).toFixed(3)} s in the recording`;
   } else {
     b.drop = entSlotAt(t);
     $("#roStatus").textContent = b.drop ? "Drop to move here" : "";
@@ -1283,7 +1286,8 @@ $("#laneInner").addEventListener("pointermove", e => {
   if (secDrag && e.pointerId === secDrag.id){
     const s = secById(secDrag.sid); if (!s) return;
     computeSrc(); const i = S.sections.indexOf(s), prev = S.sections[i - 1], next = S.sections[i + 1];
-    let t = Math.max(prev ? prev.start + 0.05 : 0, laneT(e));
+    // on the song timeline the line moves by how far you drag; the recording slides under it
+    let t = Math.max(prev ? prev.start + 0.05 : 0, view === "map" ? laneT(e) : secDrag.s0 + (laneT(e) - secDrag.t0));
     if (anchored() && next) t = Math.min(t, next.start - 0.05);
     if (i === 0) S.offset = +t.toFixed(4); else s.nudge = (s.nudge || 0) + (t - s.start) * 1000;
     if (anchored()) reanchor(secDrag.old, {[s.id]: t});
@@ -1335,7 +1339,7 @@ function syncInspector(){
   $("#showInsp").hidden = view !== "show";
   $("#mapInspWrap").hidden = !showSec;
   $("#mapInspSub").hidden = view !== "show";
-  $("#inspHint").textContent = view === "map" ? "Section in the original" : e ? (e.kind === "sec" ? "Show entry and its section" : "Click-only bars") : "Click a row or the timeline";
+  $("#inspHint").textContent = view === "map" ? "Section in the original" : e ? (e.kind === "sec" ? "This part of the song" : "Click-only bars") : "Click a row or the timeline";
   let closed = []; try { closed = JSON.parse(localStorage.getItem("pitclick:closed") || "[]"); } catch(err){}
   document.querySelectorAll(".inspector .group").forEach(g => { const h = g.querySelector("h3"); if (h) g.classList.toggle("closed", closed.includes(h.textContent.trim())); });
 }
@@ -1707,7 +1711,7 @@ function splitAtPlayhead(){
 $("#splitBtn").onclick = splitAtPlayhead;
 $("#addSec").onclick = () => {
   const last = S.sections[S.sections.length - 1];
-  mut(() => { const n = normMeter({id:uid(), label:nextLabel(), name:"", bars:8, ...(last ? steady(last) : {bpm:120, num:4, den:4, unit:"4"}), nudge:0, mute:false}); if (last){ n.groups = last.groups.slice(); if (hasRamp(last)) n.bpm = last.rampTo; } S.sections.push(n); S.arr.push({id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0}); selSec = n.id; });
+  mut(() => { const n = normMeter({id:uid(), label:nextLabel(), name:"", bars:8, ...(last ? steady(last) : {bpm:120, num:4, den:4, unit:"4"}), nudge:0, mute:false}); if (last){ n.groups = last.groups.slice(); if (hasRamp(last)) n.bpm = last.rampTo; } S.sections.push(n); const en = {id:uid(), kind:"sec", sec:n.id, repeat:1, open:false, skipStart:0, skipEnd:0}; S.arr.push(en); selSec = n.id; selEnt = en.id; });
 };
 
 /* arrangement */
@@ -1754,7 +1758,7 @@ function renderShowInsp(span){
   const cueG = i === 0 ? "" : `<div class="group"><h3>Cue</h3>
       <label class="f"><span>Wait for GO</span><input type="checkbox" data-f="cue" ${e.cue ? "checked" : ""}> <small>stop before this; GO starts it with a count-in</small></label>
       <p class="note">Use this where the MD takes over: a held fermata, a dialogue break, a free verse. It becomes its own QLab cue.</p></div>`;
-  const edit = cueG + `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from show</button></div></div>`;
+  const edit = cueG + `<div class="group"><h3>Edit</h3><div class="btns"><button class="btn sm" data-a="dup">Duplicate</button><button class="btn sm danger" data-a="del">Remove from song</button></div></div>`;
   if (e.kind === "click"){
     const mc = meterCells(e);
     el.innerHTML = `<div data-i="${i}">
@@ -1768,7 +1772,7 @@ function renderShowInsp(span){
   }
   const s = secById(e.sec);
   el.innerHTML = `<div data-i="${i}">
-    <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">Show entry</span></div>
+    <div class="insp-head"><span class="mark${e.open || e.repeat > 1 ? " vamp" : ""}">${esc(s.label)}</span><b style="flex:1">${esc(s.name || "Section " + s.label)}</b><span class="lbl">In the song</span></div>
     <div class="group"><h3>Plays</h3><p class="note">${sp} · ${esc(sigTxt(s))} · ${tempoHTML(s)}</p>
       ${(() => {
         const mode = e.skip ? "skip" : (e.open || e.safety) ? vtName(e) : e.repeat > 1 ? "repeat" : "once";
@@ -1921,6 +1925,7 @@ $("#setSplit").onchange = e => { S.set.split = e.target.checked; applyMix(); sav
 
 /* view switch */
 function setView(v){
+  v = "show";   // one view now: the song as you'll play it
   if (v === view) return;
   stopIfPlaying();
   const from = view;
@@ -1935,17 +1940,15 @@ function setView(v){
 }
 let tab = "show";
 function syncViewUI(){
-  document.querySelectorAll(".vbtn").forEach(b => b.setAttribute("aria-pressed", b.dataset.tab === tab));
-  $("#viewDesc").textContent = tab === "map" ? "The recording as it is: line up bar 1, tempos, time signatures, rits and holds." : "The show as you'll play it: order, repeats, vamps, safeties, cuts and stops.";
-  $("#mapTools").hidden = tab !== "map"; $("#showTools").hidden = tab !== "show";
-  $("#mapBody").hidden = tab !== "map"; $("#ents").hidden = tab !== "show";
+  $("#mapTools").hidden = false; $("#showTools").hidden = false;
+  $("#mapBody").hidden = true; $("#ents").hidden = false;
 }
 function setTab(t){
-  tab = t === "map" ? "map" : "show";
+  tab = "show";
   setView(tab); syncViewUI();
   renderAll(); saveLocal();
 }
-document.querySelectorAll(".vbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+
 /* transport */
 $("#playBtn").onclick = () => P ? stop() : play();
 $("#stopBtn").onclick = () => { stop(); updateReadout(); };
@@ -2318,9 +2321,8 @@ async function loadFile(file){
   }
 }
 function setViewSilent(v){
-  view = v; invalidate(); tab = v === "map" ? "map" : "show";
+  view = "show"; invalidate(); tab = "show";
   syncViewUI();
-  $("#laneLbl").textContent = v === "map" ? "Original recording" : "Show";
 }
 $("#fileIn").addEventListener("change", e => { addSongs(e.target.files); e.target.value = ""; });
 let dragN = 0;
