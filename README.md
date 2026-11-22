@@ -41,4 +41,4 @@ Unzip into your show folder, open QLab 5 and the workspace, click the cue they s
 
 ## Building the desktop apps
 
-The desktop apps wrap the same `index.html` with Electron (in `desktop/`). Push a tag such as `v1.0.1` and GitHub Actions builds the `.dmg` and `.exe` on Mac and Windows machines and attaches them to a release. To try it locally: `cd desktop && npm install && npm start`.
+The desktop apps wrap the same `index.html` with Electron (in `desktop/`). Change `version` in `desktop/package.json` (for example to `1.0.1`) and push: GitHub Actions builds the `.dmg` and `.exe` on Mac and Windows machines and attaches them to a release. To try it locally: `cd desktop && npm install && npm start`.

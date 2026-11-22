@@ -1,10 +1,12 @@
-# Builds the Pit Click desktop apps on real Mac and Windows machines.
-# Push a tag like v1.0.1 and the .dmg and .exe files appear on the repo's Releases page.
-# "Run workflow" on the Actions tab builds them too (downloadable from that run) without making a release.
+# Builds the Pit Click desktop apps on real Mac and Windows machines whenever the app changes on main.
+# To publish a new version: change "version" in desktop/package.json (e.g. 1.0.1) and push.
+# The .dmg and .exe then appear on the repo's Releases page as v1.0.1. Pushing a tag like v1.0.1 works too.
 name: Desktop apps
 
 on:
   push:
+    branches: [main]
+    paths: ["index.html", "desktop/**", ".github/workflows/desktop.yml"]
     tags: ["v*"]
   workflow_dispatch:
 
@@ -58,17 +60,37 @@ jobs:
 
   release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Which version is this?
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then tag="$GITHUB_REF_NAME"
+          else tag="v$(node -p "require('./desktop/package.json').version")"; fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          # a version that's already released isn't released again: bump the version to publish
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo "new=no" >> "$GITHUB_OUTPUT"; echo "$tag is already released"
+          else echo "new=yes" >> "$GITHUB_OUTPUT"; fi
+
       - uses: actions/download-artifact@v4
+        if: steps.v.outputs.new == 'yes'
         with:
           path: out
           merge-multiple: true
 
       - uses: softprops/action-gh-release@v2
+        if: steps.v.outputs.new == 'yes'
         with:
-          name: Pit Click ${{ github.ref_name }}
+          tag_name: ${{ steps.v.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Pit Click ${{ steps.v.outputs.tag }}
+          make_latest: true
           files: out/*
           body: |
             **Mac:** download `Pit-Click-…-Mac.dmg`, open it and drag Pit Click into Applications.
