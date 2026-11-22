@@ -1,39 +1,44 @@
 # Pit Click
 
-A browser app for building click tracks for musical theatre backing tracks.
+Click tracks for musical theatre backing tracks: tempo maps, vamps, safeties, segues and a QLab export that the operator only has to press GO on.
 
-- Load a track, auto-detect the tempo and bar 1, or tap along
-- Build a tempo map with rehearsal-letter sections (tempo, meter, nudge)
-- Make a show running order: repeat or cut bars, reorder sections, add click-only bars, and vamps that loop until you press GO
-- Track audio is edited to match the click
-- Export a .zip: click WAV, click L / track R WAV, edited track WAV, MIDI tempo map with markers, and a text running order
+## Download
 
-Open `index.html` in a browser. Everything runs locally; nothing is uploaded.
+Get the latest Mac and Windows apps from the **[Releases page](https://github.com/Overdrive-Studios/PitClickCreator/releases/latest)**. They work fully offline, and your songs, maps and settings stay on your computer.
 
-Keys: Space play/pause, G go, T tap, S split at playhead, Ctrl/Cmd+Z undo.
+**Mac** (Apple Silicon and Intel): open `Pit-Click-…-Mac.dmg` and drag Pit Click into Applications.
+The first time you open it, macOS says it can't check the app. Click **Done**, open **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Pit Click. After that it opens normally.
 
-Export works in claude.ai and in any normal browser (it falls back to a regular download).
+**Windows**: run `Pit-Click-…-Windows-Setup.exe`. If Windows shows "Windows protected your PC", click **More info → Run anyway**. The `Portable.exe` runs without installing.
+
+The apps aren't signed with an Apple or Microsoft developer certificate yet, which is why those one-time warnings appear.
+
+The web version still works too: open `index.html` in a browser, or the GitHub Pages site.
+
+## What it does
+
+- Add every song in the show, drag them into order, and mark songs that flow straight into the next
+- Auto-detect the tempo and bar 1, or tap along; any time signature, rits, holds, and a feel per section (in 1, 2, 4…)
+- Drag a section's start line onto the hit in the waveform to line the click up with the recording
+- Running order: repeat or cut bars, reorder sections, add click-only bars, turn the click off for a part
+- Vamps and safeties: a set number of times every night, or looping until the MD's GO
+- Count-in in bars or clicks (1, 2, 3, 4, 6, 8…), and Wait-for-GO stopped points
+- Exports match exactly what you hear in Pit Click
+
+Keys: Space play/pause, G go, T tap, S split at the playhead, Ctrl/Cmd+Z undo.
 
 ## Running the show in QLab
 
-Step 3 has **Export for QLab**. It gives one zip with:
+**Export ▾ → QLab** gives one zip (or one for the whole show) with:
 
-- a WAV per cue for the in-ears. By default it's click only (the track is usually just a reference) and the click goes to outputs 1 and 2, so it's in both ears. Set **The track** to *Plays in the show* to put the click on output 1 and the track on output 2 for FOH
-- vamps rendered once and marked as looping slices, with a Devamp cue for each
-- safeties: play their set number of passes on their own; a Skip button in a **Safeties** cue cart (not the GO list) moves on after the current pass
-- songs split into separate cues at any running-order entry marked **Wait for GO**
+- a WAV per cue: click only in both ears, click on output 1 and track on output 2 for FOH, or track and click together with the click down the centre
+- vamps and safeties set to the MD's GO as looping slices, each with its own Leave vamp / End safety GO; ones set to a number of times are built straight into the audio
+- a new cue only at your own Wait-for-GO points; segues joined into one cue so the next song starts exactly on time
 - `Import into QLab.applescript`, which builds the cues in the open QLab 5 workspace
 - `Cue sheet.txt`, listing what each GO does, plus the slice times in case you need to set them by hand
 
-Unzip into your show folder, open QLab 5 and the workspace, click the cue they should go after,
-then open the script in Script Editor and press Run.
+Unzip into your show folder, open QLab 5 and the workspace, click the cue they should go after, then open the script in Script Editor and press Run.
 
-## Layout
+## Building the desktop apps
 
-One screen, laid out like a DAW: control bar (transport, readout, count-in, Click and Export menus) along the top,
-the inspector on the left, and the timeline with the section list or running order in the middle.
-**Original** shows the recording as it is (tempo map); **Show** shows the running order.
-In the Show view the inspector has the running-order settings and the section's tempo and meter together.
-Each running-order entry **Plays**: Once, Repeat (×N), Vamp (length in bars, loops until GO), Safety (length in bars, up to N times)
-or Skip. QLab follows the same choices. **Keep the song as long as the recording** keeps every section where it is in the
-recording so repeats don't make the song longer; exports always use the show as edited.
+The desktop apps wrap the same `index.html` with Electron (in `desktop/`). Push a tag such as `v1.0.1` and GitHub Actions builds the `.dmg` and `.exe` on Mac and Windows machines and attaches them to a release. To try it locally: `cd desktop && npm install && npm start`.

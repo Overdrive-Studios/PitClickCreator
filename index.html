@@ -241,7 +241,7 @@ input[type=checkbox]{accent-color:var(--amber)}
 <div class="app">
   <header class="ctrl" aria-label="Control bar">
     <div class="ctl-left">
-      <div class="brand"><h1>Pit Click <span class="ver">v47</span></h1><span class="trk" id="trkName">Demo track</span></div>
+      <div class="brand"><h1>Pit Click <span class="ver">v48</span></h1><span class="trk" id="trkName">Demo track</span></div>
       <label class="btn primary file">Add tracks…<input type="file" id="fileIn" multiple accept="audio/*,.wav,.mp3,.m4a,.aif,.aiff,.flac,.ogg"></label>
       <button class="btn" id="demoBtn">Demo</button>
     </div>
@@ -2405,6 +2405,7 @@ $("#demoBtn").onclick = () => { stopIfPlaying(); saveNow(); SHOW.cur = null; sav
 let dlP = null;
 function downloads(){
   if (!dlP) dlP = (async () => {
+    if (window.pitDesktop) return null;
     for (let i = 0; i < 40 && !(window.claude && window.claude.use); i++) await new Promise(r => setTimeout(r, 100));
     if (!(window.claude && window.claude.use)) return null;
     try { return await window.claude.use("downloads"); } catch(e){ return null; }
@@ -2507,6 +2508,16 @@ function zip(files){
   return new Blob([...parts, ...cen, e.buffer], {type:"application/zip"});
 }
 async function save(filename, data){
+  // desktop app: a normal Save dialog, and the saved file is shown in Finder / Explorer
+  if (window.pitDesktop){
+    try {
+      const buf = data instanceof Blob ? await data.arrayBuffer() : (data.buffer ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : data);
+      const r = await window.pitDesktop.saveFile(filename, buf);
+      if (r && r.saved){ toast("Saved " + r.name); return true; }
+      if (r && r.error){ toast("Couldn't save: " + r.error); return false; }
+      toast("Save cancelled."); return false;
+    } catch(err){ toast("Couldn't save: " + ((err && err.message) || "unknown error")); return false; }
+  }
   const dl = await downloads();
   if (!dl){
     try {

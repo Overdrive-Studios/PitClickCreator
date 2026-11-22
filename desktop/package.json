@@ -1,0 +1,88 @@
+{
+  "name": "pit-click",
+  "productName": "Pit Click",
+  "version": "1.0.0",
+  "description": "Click tracks for musical theatre: tempo maps, vamps, safeties and QLab export.",
+  "author": "Overdrive Music Studio",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "node build/prepare.js",
+    "start": "node build/prepare.js && electron .",
+    "dist:mac": "node build/prepare.js && electron-builder --mac --publish never",
+    "dist:win": "node build/prepare.js && electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "@fontsource/bodoni-moda": "5.2.7",
+    "@fontsource/ibm-plex-mono": "5.2.7",
+    "@fontsource/ibm-plex-sans": "5.2.8",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.overdrivemusicstudio.pitclick",
+    "productName": "Pit Click",
+    "copyright": "Overdrive Music Studio",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app/**/*"
+    ],
+    "afterPack": "build/afterPack.js",
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "identity": null,
+      "hardenedRuntime": false,
+      "artifactName": "Pit-Click-${version}-Mac.${ext}"
+    },
+    "dmg": {
+      "title": "Pit Click ${version}"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Pit Click",
+      "artifactName": "Pit-Click-${version}-Windows-Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "Pit-Click-${version}-Windows-Portable.${ext}"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Overdrive-Studios/PitClickCreator.git"
+  }
+}
